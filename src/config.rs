@@ -4,6 +4,7 @@ pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
 pub const PROFILES_TOML_FILE: &str = "profiles.toml";
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
+// todo 配置分区
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AppConfig {
     /// LLM api key.
@@ -35,12 +36,19 @@ pub struct AppConfig {
     /// Shell Comamnd Gen 输出的命令个数.
     #[serde(default = "default_output_commands_n")]
     pub output_commands_n: u32,
+    /// Shell Command Gen 是否等待输出显示完毕,
+    #[serde(default = "default_wait_for_output")]
+    pub wait_for_output: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+fn default_wait_for_output() -> bool {
+    true
 }
 
 fn default_output_commands_n() -> u32 {

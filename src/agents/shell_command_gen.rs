@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agents::tools::{FinishResponse, FinishResponseArgs, Help, Man};
@@ -10,7 +11,7 @@ use indicatif::ProgressStyle;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
 use rig::client::CompletionClient;
-use rig::message::{AssistantContent, Message};
+use rig::message::{AssistantContent, Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
 use rig::tool::Tool;
@@ -38,7 +39,12 @@ impl ScrolliingMessage {
 
     async fn push(&self, appendant: String) {
         let mut message = self.message.lock().await;
-        *message += &appendant;
+        *message += &appendant.replace("\n", " ");
+    }
+
+    async fn has_new_messages(&self) -> bool {
+        let message = self.message.lock().await;
+        !message.is_empty()
     }
 
     /// 返回实际 pop 的字符数和对应字符串.
@@ -60,9 +66,10 @@ impl ScrolliingMessage {
         let (step, popen) = self.pop(step).await;
         let dispose_len = (window.len() + step).saturating_sub(self.scroll_width);
         *window = window
-            .range(dispose_len..)
+            .iter()
             .copied()
             .chain(popen.chars())
+            .skip(dispose_len)
             .collect();
         window.iter().copied().collect()
     }
@@ -160,6 +167,7 @@ impl ShellCommandGenAgent {
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
         let scroll = ScrolliingMessage::new(40);
+        let finished = Arc::new(AtomicBool::new(false));
         let pb_span = info_span!("Resolving");
         pb_span
             .pb_set_style(&ProgressStyle::with_template("{spinner:.green} Agent: {msg}").unwrap());
@@ -169,10 +177,11 @@ impl ShellCommandGenAgent {
             // 持续滚动进度条输出.
             let pb_span = pb_span.clone();
             let scroll = scroll.clone();
+            let finished = Arc::clone(&finished);
             tokio::spawn(async move {
-                loop {
-                    pb_span.pb_set_message(&scroll.scroll(5).await);
-                    tokio::time::sleep(Duration::from_millis(20)).await;
+                while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
+                    pb_span.pb_set_message(&scroll.scroll(7).await);
+                    tokio::time::sleep(Duration::from_millis(30)).await;
                 }
             })
         };
@@ -192,7 +201,6 @@ impl ShellCommandGenAgent {
                         );
                         if tool_call.function.name == FinishResponse::NAME {
                             finish = serde_json::from_value(tool_call.function.arguments).unwrap();
-                            break;
                         }
                     }
                     Reasoning(reasoning) => {
@@ -202,17 +210,33 @@ impl ShellCommandGenAgent {
                 },
                 StreamUserItem(content) => {
                     let StreamedUserContent::ToolResult(rst) = content;
-                    trace!("Tool result: {:?}", rst.content);
+                    let call_id = rst.call_id.unwrap_or("".into());
+                    for content in rst.content {
+                        if let ToolResultContent::Text(text) = content {
+                            debug!(
+                                "Tool {} result: {}",
+                                call_id,
+                                format!("{:?}", text)
+                                    .chars()
+                                    .take(1000)
+                                    .chain("...".chars())
+                                    .collect::<String>()
+                            );
+                        }
+                    }
                 }
                 FinalResponse(final_response) => {
                     // 这个包含了完整的输出.
                     output = final_response;
                     debug!("Usage: {:?}", output.usage());
+                    finished.store(true, Ordering::Relaxed);
                 }
                 _ => warn!("Unknown stream chunk."),
             }
         }
-        scrolling_handle.abort();
+        if !self.config.wait_for_output {
+            scrolling_handle.abort();
+        }
         scrolling_handle.await.ok();
         drop(_pb_span_enter);
 
