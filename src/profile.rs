@@ -89,7 +89,7 @@ If you cannot come up with any solution, DO NOT call the {FINISH_RESPONSE} tool.
 Instead, provide your reasons in plain text output.
 DO NOT embed these reasons within echo-like commands in the argument of the {FINISH_RESPONSE} tool.
 
-DO NOT call {FINISH_RESPONSE} twice. once you call it, you should stop outputing anything.
+DO NOT call {FINISH_RESPONSE} twice. Once you call it, you should stop outputing anything.
 
 ## Text Language
 

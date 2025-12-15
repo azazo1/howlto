@@ -50,7 +50,9 @@ impl Tool for Help {
                         },
                         "description": r#"Subcommands of the program, \
                             e.g.: you should give `["a", "b", "c"]` to get the help of `program a b c`. \
-                            if no subcommand is needed, to get help of the program itself, you can pass []."#
+                            if no subcommand is needed, to get help of the program itself, you can pass []. \
+                            Your query should start with [], getting the help of program itself, and then call again for the specific subcommands. \
+                            When you feel you are on the wrong subcommand, you can pop a level and check other subcommands."#
                     },
                     "program": {
                         "type": "string",
