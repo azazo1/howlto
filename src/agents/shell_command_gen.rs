@@ -168,8 +168,8 @@ impl ShellCommandGenAgent {
 
     /// shell command gen agent 解决一个 `prompt`.
     pub async fn resolve(&self, prompt: String) -> Result<ShellCommandGenAgentResponse> {
-        // stream_prompt 会自动处理工具的调用, multi_turn: 最大的工具调用次数.
-        let mut stream = self.agent.stream_prompt(&prompt).multi_turn(100).await;
+        // stream_prompt 会自动处理工具的调用.
+        let mut stream = self.agent.stream_prompt(&prompt).multi_turn(3).await;
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
         let scroll = ScrolliingMessage::new(40);
