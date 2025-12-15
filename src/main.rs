@@ -129,19 +129,23 @@ async fn main() -> anyhow::Result<()> {
         todo!("interact mode")
     } else {
         let prompt: String = prompt.join(" ");
-        ShellCommandGenAgent::builder()
-            .profile(
-                profiles
-                    .get(SHELL_COMMAND_GEN_PROFILE)
-                    .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
-                    .clone(),
-            )
-            .os(std::env::consts::OS.to_string())
-            .shell(detect_shell())
-            .config(config)
-            .build()?
-            .resolve(prompt)
-            .await?;
+        println!(
+            "{}",
+            ShellCommandGenAgent::builder()
+                .profile(
+                    profiles
+                        .get(SHELL_COMMAND_GEN_PROFILE)
+                        .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
+                        .clone(),
+                )
+                .os(std::env::consts::OS.to_string())
+                .shell(detect_shell())
+                .config(config)
+                .build()?
+                .resolve(prompt)
+                .await?
+                .command
+        );
     }
     Ok(())
 }

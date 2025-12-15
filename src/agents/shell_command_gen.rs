@@ -8,7 +8,7 @@ use rig::message::{AssistantContent, Message};
 use rig::providers::openai::{self, CompletionModel};
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
 use tokio_stream::StreamExt;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 pub struct ShellCommandGenAgent {
     /// 代表操作系统的字符串.
@@ -24,9 +24,9 @@ pub struct ShellCommandGenAgent {
 
 pub struct ShellCommandGenAgentResponse {
     /// agent 做出决策时的上下文.
-    messages: Vec<Message>,
+    pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
-    command: String,
+    pub command: String,
 }
 
 #[bon::bon]
@@ -90,21 +90,23 @@ impl ShellCommandGenAgent {
             use StreamedAssistantContent::*;
             match chunk {
                 StreamAssistantItem(content) => match content {
-                    Text(text) => print!("{}", text.text),
+                    Text(_text) => {
+                        // print!("{}", text.text);
+                    }
                     ToolCall(tool_call) => {
-                        println!(
+                        info!(
                             "toolcall: {}, {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
                     }
-                    Reasoning(reasoning) => {
-                        print!("{}", reasoning.reasoning.into_iter().collect::<String>())
+                    Reasoning(_reasoning) => {
+                        // print!("{}", reasoning.reasoning.into_iter().collect::<String>());
                     }
                     _ => (),
                 },
                 StreamUserItem(content) => {
                     let StreamedUserContent::ToolResult(rst) = content;
-                    dbg!(rst.content);
+                    debug!("{:?}", rst.content);
                 }
                 FinalResponse(final_response) => {
                     // 这个包含了完整的输出.
