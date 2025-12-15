@@ -10,40 +10,61 @@ use rig::message::{AssistantContent, Message};
 use rig::providers::openai::{self, CompletionModel};
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
 use rig::tool::Tool;
+use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, trace, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ScrolliingMessage {
-    /// 最大字符长度.
-    max_length: usize,
-    message: String,
+    /// 滚动的窗口宽度.
+    scroll_width: usize,
+    scroll_window: Arc<Mutex<VecDeque<char>>>,
+    message: Arc<Mutex<String>>,
 }
 
 impl ScrolliingMessage {
-    fn new(max_length: usize) -> Self {
+    fn new(scroll_width: usize) -> Self {
         Self {
-            max_length,
-            message: String::new(),
+            scroll_width,
+            scroll_window: Arc::new(Mutex::new(VecDeque::new())),
+            message: Arc::new(Mutex::new(String::new())),
         }
     }
 
-    fn message(&self) -> &str {
-        &self.message
+    async fn message(&self) -> String {
+        self.message.lock().await.clone()
     }
 
-    fn push(&mut self, appendant: String) {
-        self.message = self
-            .message
-            .chars()
-            .chain(appendant.chars())
-            .rev()
-            .take(self.max_length)
-            .collect::<String>()
-            .chars()
-            .rev()
+    async fn push(&self, appendant: String) {
+        let mut message = self.message.lock().await;
+        *message += &appendant;
+    }
+
+    /// 返回实际 pop 的字符数和对应字符串.
+    async fn pop(&self, chars: usize) -> (usize, String) {
+        let mut message = self.message.lock().await;
+        let idx = message
+            .char_indices()
+            .nth(chars)
+            .map(|(idx, _)| idx)
+            .unwrap_or(message.len());
+        let rst = message[..idx].to_string();
+        *message = message[idx..].to_string();
+        (idx, rst)
+    }
+
+    /// - `step`: 滚动字符数
+    async fn scroll(&self, step: usize) -> String {
+        let mut window = self.scroll_window.lock().await;
+        let (step, popen) = self.pop(step).await;
+        let dispose_len = (window.len() + step).saturating_sub(self.scroll_width);
+        *window = window
+            .range(dispose_len..)
+            .copied()
+            .chain(popen.chars())
             .collect();
+        window.iter().copied().collect()
     }
 }
 
@@ -138,13 +159,23 @@ impl ShellCommandGenAgent {
         let mut stream = self.agent.stream_prompt(&prompt).multi_turn(100).await;
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
-        let mut scroll = ScrolliingMessage::new(40);
+        let scroll = ScrolliingMessage::new(40);
         let pb_span = info_span!("Resolving");
-        pb_span.pb_set_style(
-            &ProgressStyle::with_template("{spinner:.green} Agent: {msg}").unwrap(),
-        );
+        pb_span
+            .pb_set_style(&ProgressStyle::with_template("{spinner:.green} Agent: {msg}").unwrap());
         pb_span.pb_set_message("Waiting for output...");
         let _pb_span_enter = pb_span.enter();
+        let scrolling_handle = {
+            // 持续滚动进度条输出.
+            let pb_span = pb_span.clone();
+            let scroll = scroll.clone();
+            tokio::spawn(async move {
+                loop {
+                    pb_span.pb_set_message(&scroll.scroll(5).await);
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+        };
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
             use MultiTurnStreamItem::*;
@@ -152,8 +183,7 @@ impl ShellCommandGenAgent {
             match chunk {
                 StreamAssistantItem(content) => match content {
                     Text(text) => {
-                        scroll.push(text.text);
-                        pb_span.pb_set_message(scroll.message());
+                        scroll.push(text.text).await;
                     }
                     ToolCall(tool_call) => {
                         info!(
@@ -166,8 +196,7 @@ impl ShellCommandGenAgent {
                         }
                     }
                     Reasoning(reasoning) => {
-                        scroll.push(reasoning.reasoning.into_iter().collect());
-                        pb_span.pb_set_message(scroll.message());
+                        scroll.push(reasoning.reasoning.into_iter().collect()).await;
                     }
                     _ => (),
                 },
@@ -183,6 +212,8 @@ impl ShellCommandGenAgent {
                 _ => warn!("Unknown stream chunk."),
             }
         }
+        scrolling_handle.abort();
+        scrolling_handle.await.ok();
         drop(_pb_span_enter);
 
         // 暂时只支持使用第一个回应, todo 支持多个回应的交互式选择.
