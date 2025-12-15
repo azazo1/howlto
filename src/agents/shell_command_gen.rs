@@ -215,6 +215,7 @@ impl ShellCommandGenAgent {
                         if tool_call.function.name == FinishResponse::NAME {
                             // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
                             finish = serde_json::from_value(tool_call.function.arguments).unwrap();
+                            break;
                         }
                     }
                     Reasoning(reasoning) => {
