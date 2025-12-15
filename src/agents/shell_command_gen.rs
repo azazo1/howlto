@@ -36,10 +36,6 @@ impl ScrolliingMessage {
         }
     }
 
-    async fn message(&self) -> String {
-        self.message.lock().await.clone()
-    }
-
     async fn push(&self, appendant: String) {
         let mut message = self.message.lock().await;
         *message += &appendant;
