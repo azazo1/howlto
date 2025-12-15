@@ -17,3 +17,4 @@
 - [ ] 添加根据上次输入命令自动修正命令, 和 `howlto git push -up origin main` -> `git push -u origin main` 这样的命令自动修正功能.
 - [ ] 提供一个接口来查询当前的 token 使用情况.
 - [ ] howlto 直接执行进入交互模式.
+- [ ] indicatif 实时显示模型输出在一行.
