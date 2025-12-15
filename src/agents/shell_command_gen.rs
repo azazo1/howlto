@@ -1,3 +1,7 @@
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::Duration;
+
 use crate::agents::tools::{FinishResponse, FinishResponseArgs, Help, Man};
 use crate::error::{Error, Result};
 use crate::profile::template;
@@ -217,10 +221,10 @@ impl ShellCommandGenAgent {
         drop(_pb_span_enter);
 
         // 暂时只支持使用第一个回应, todo 支持多个回应的交互式选择.
-        // println!("---");
         let finish = finish.results.first().cloned().unwrap_or("".into());
         if finish.is_empty() {
             warn!("No command provided.");
+            info!("Shell Command Gen Agent: {}", output.response());
         }
         let output = format!("{}\n{}", output.response(), finish);
         Ok(ShellCommandGenAgentResponse {
