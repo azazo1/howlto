@@ -139,9 +139,11 @@ impl ShellCommandGenAgent {
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
         let mut scroll = ScrolliingMessage::new(40);
-        // todo pb_span 不显示 tokens 的走马灯效果.
         let pb_span = info_span!("Resolving");
-        pb_span.pb_set_style(&ProgressStyle::with_template("{spinner:.green} {msg:40}").unwrap());
+        pb_span.pb_set_style(
+            &ProgressStyle::with_template("{spinner:.green} Agent: {msg}").unwrap(),
+        );
+        pb_span.pb_set_message("Waiting for output...");
         let _pb_span_enter = pb_span.enter();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
@@ -150,7 +152,6 @@ impl ShellCommandGenAgent {
             match chunk {
                 StreamAssistantItem(content) => match content {
                     Text(text) => {
-                        // println!("t: {}", text.text);
                         scroll.push(text.text);
                         pb_span.pb_set_message(scroll.message());
                     }
@@ -165,10 +166,6 @@ impl ShellCommandGenAgent {
                         }
                     }
                     Reasoning(reasoning) => {
-                        // println!(
-                        //     "r: {}",
-                        //     reasoning.reasoning.iter().cloned().collect::<String>()
-                        // );
                         scroll.push(reasoning.reasoning.into_iter().collect());
                         pb_span.pb_set_message(scroll.message());
                     }

@@ -46,7 +46,7 @@ pub async fn init(config_dir: impl AsRef<Path>) -> Result<WorkerGuard, io::Error
     tracing_subscriber::registry()
         .with(file_layer)
         .with(stderr_layer)
-        .with(indicatif_layer.with_filter(filter_fn(|_| false))) // 在进度条上不显示内容
+        .with(indicatif_layer.with_filter(filter_fn(stderr_filter))) // 在进度条上不显示内容
         .with(env_filter)
         .init();
     Ok(guard)
