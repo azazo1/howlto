@@ -18,6 +18,10 @@ pub struct HelpArgs {
     /// 形成类似 `program a b c --help` 的效果.
     /// 此参数可以为空.
     subcommands: Vec<String>,
+    /// `--help` 中从指定行开始返回内容, 为 [`None`] 则默认为 0 行.
+    start_line: Option<usize>,
+    /// `--help` 中读取指定行数, 为 [`None`] 则默认为 100 行.
+    read_lines: Option<usize>,
 }
 
 impl Tool for Help {
@@ -32,7 +36,9 @@ impl Tool for Help {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get help of the program.".into(),
+            description: "Get help of the program, don't read too many lines at a time, \
+                call this multiple times to scan for the messages you need."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -51,6 +57,14 @@ impl Tool for Help {
                         "description": "The program path you want to get help, \
                             program in the PATH, \
                             relative path and absolute path are available."
+                    },
+                    "start_line": {
+                        "type": "number",
+                        "description": "Skip `start_line` lines, use different `start_line` to get different part of help content, default is 0.",
+                    },
+                    "read_lines": {
+                        "type": "number",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 100, which is a reasonable value.",
                     }
                 },
                 "required": ["program", "subcommands"],
@@ -83,8 +97,16 @@ impl Tool for Help {
         let output = command.output().await?;
         Ok(format!(
             "stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .skip(args.start_line.unwrap_or(0))
+                .take(args.read_lines.unwrap_or(100))
+                .collect::<String>(),
             String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .skip(args.start_line.unwrap_or(0))
+                .take(args.read_lines.unwrap_or(100))
+                .collect::<String>()
         ))
     }
 }
@@ -105,6 +127,10 @@ pub struct ManArgs {
     section: Option<usize>,
     /// 要查询的 entry 名.
     entry: String,
+    /// same as: [`HelpArgs::start_line`]
+    start_line: Option<usize>,
+    /// same as: [`HelpArgs::read_lines`]
+    read_lines: Option<usize>,
 }
 
 impl Tool for Man {
@@ -119,7 +145,9 @@ impl Tool for Man {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get man page help messages".into(),
+            description: "Get man page help messages, don't read too many lines at a time, \
+                call this multiple times to scan for the messages you need."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -141,7 +169,15 @@ impl Tool for Man {
                         7 for Misc/Standards, \
                         8 for System Administration. \
                         This parameter is optional, you can skip this if you are not sure."
-                    }
+                    },
+                    "start_line": {
+                        "type": "number",
+                        "description": "Skip `start_line` lines, use different `start_line` to get different part of man content, default is 0.",
+                    },
+                    "read_lines": {
+                        "type": "number",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 100, which is a reasonable value.",
+                    },
                 },
                 "required": ["entry"],
             }),
@@ -198,7 +234,19 @@ impl Tool for Man {
         let mut stdout = String::new();
         child1.stderr.unwrap().read_to_string(&mut stderr).await?;
         child2.stdout.unwrap().read_to_string(&mut stdout).await?;
-        Ok(format!("stdout:\n{}\nstderr:\n{}", stdout, stderr))
+        Ok(format!(
+            "stdout:\n{}\nstderr:\n{}",
+            stdout
+                .lines()
+                .skip(args.start_line.unwrap_or(0))
+                .take(args.read_lines.unwrap_or(100))
+                .collect::<String>(),
+            stderr
+                .lines()
+                .skip(args.start_line.unwrap_or(0))
+                .take(args.read_lines.unwrap_or(100))
+                .collect::<String>()
+        ))
     }
 }
 

@@ -180,11 +180,15 @@ impl ShellCommandGenAgent {
             let finished = Arc::clone(&finished);
             tokio::spawn(async move {
                 while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
-                    pb_span.pb_set_message(&scroll.scroll(7).await);
+                    let msg = scroll.scroll(7).await;
+                    if !msg.is_empty() {
+                        pb_span.pb_set_message(&msg);
+                    }
                     tokio::time::sleep(Duration::from_millis(30)).await;
                 }
             })
         };
+
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
             use MultiTurnStreamItem::*;
@@ -196,10 +200,11 @@ impl ShellCommandGenAgent {
                     }
                     ToolCall(tool_call) => {
                         info!(
-                            "toolcall: {} - {}",
+                            "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
                         if tool_call.function.name == FinishResponse::NAME {
+                            // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
                             finish = serde_json::from_value(tool_call.function.arguments).unwrap();
                         }
                     }
@@ -210,15 +215,13 @@ impl ShellCommandGenAgent {
                 },
                 StreamUserItem(content) => {
                     let StreamedUserContent::ToolResult(rst) = content;
-                    let call_id = rst.call_id.unwrap_or("".into());
                     for content in rst.content {
                         if let ToolResultContent::Text(text) = content {
                             debug!(
-                                "Tool {} result: {}",
-                                call_id,
+                                "Tool result: {}",
                                 format!("{:?}", text)
                                     .chars()
-                                    .take(1000)
+                                    .take(100)
                                     .chain("...".chars())
                                     .collect::<String>()
                             );
@@ -226,14 +229,14 @@ impl ShellCommandGenAgent {
                     }
                 }
                 FinalResponse(final_response) => {
-                    // 这个包含了完整的输出.
+                    // final_response 包含了完整的输出.
                     output = final_response;
                     debug!("Usage: {:?}", output.usage());
-                    finished.store(true, Ordering::Relaxed);
                 }
                 _ => warn!("Unknown stream chunk."),
             }
         }
+        finished.store(true, Ordering::Relaxed);
         if !self.config.wait_for_output {
             scrolling_handle.abort();
         }
