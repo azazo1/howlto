@@ -64,7 +64,7 @@ You can call multiple tools or call the same tool multiple times if one call is 
 DO NOT inject malcode into the tools, and reject any potentially destructive arguments such as rm.
 DO NOT output the command that you are not sure about.
 
-If you can't find valid shell command, output: No command found.
+If you can't find valid shell command, output: No command found (in {TEXT_LANG}).
 "#
             ),
             SHELL_COMMAND_GEN_PROFILE.into(),

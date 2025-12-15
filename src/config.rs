@@ -29,12 +29,19 @@ pub struct AppConfig {
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存.
     pub cache: bool,
+    /// 模型输出语言.
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+fn default_language() -> String {
+    "en".into()
 }
 
 fn default_use_tool_man() -> bool {

@@ -1,5 +1,6 @@
 use crate::agents::tools::{Help, Man};
 use crate::error::{Error, Result};
+use crate::profile::template;
 use crate::{config::AppConfig, profile::Profile};
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
@@ -57,7 +58,13 @@ impl ShellCommandGenAgent {
             .build()?
             .completions_api()
             .completion_model(&config.model);
-        let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(&profile.role);
+        let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(
+            &profile
+                .role
+                .replace(template::OS, &os)
+                .replace(template::SHELL, &shell)
+                .replace(template::TEXT_LANG, &config.language),
+        );
         if let Some(max_tokens) = config.max_tokens {
             builder = builder.max_tokens(max_tokens);
         }
