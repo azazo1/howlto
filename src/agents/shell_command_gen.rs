@@ -17,7 +17,7 @@ use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPro
 use rig::tool::Tool;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, info_span, trace, warn};
+use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 #[derive(Debug, Clone)]
