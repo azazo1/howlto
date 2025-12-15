@@ -2,7 +2,7 @@ use crate::agents::tools::{Help, Man};
 use crate::error::{Error, Result};
 use crate::{config::AppConfig, profile::Profile};
 use reqwest::header::HeaderMap;
-use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem, stream_to_stdout};
+use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
 use rig::client::CompletionClient;
 use rig::message::{AssistantContent, Message};
 use rig::providers::openai::{self, CompletionModel};

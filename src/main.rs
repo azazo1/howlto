@@ -5,16 +5,11 @@ use clap::Parser;
 use howlto::agents::shell_command_gen::ShellCommandGenAgent;
 use howlto::config::{AppConfig, CONFIG_TOML_FILE, PROFILES_TOML_FILE};
 use howlto::error::{Error, Result};
+use howlto::logging;
 use howlto::profile::Profiles;
 use howlto::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::{config::DEFAULT_CONFIG_DIR, profile::Profile};
 use tokio::{fs, io};
-use tracing::Level;
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::filter::filter_fn;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Layer};
 
 #[derive(clap::Parser)]
 #[clap(about, long_about=None, version, author)]
@@ -107,38 +102,7 @@ async fn main() -> anyhow::Result<()> {
         config: config_dir,
     } = AppArgs::parse();
 
-    // 输出日志
-    let logs_dir = config_dir.join("logs");
-    if !logs_dir.is_dir() {
-        fs::create_dir(logs_dir).await?;
-    }
-    let file_appender =
-        RollingFileAppender::new(Rotation::DAILY, config_dir.join("logs"), "howlto.log");
-    let (logging_appender, _guard) = tracing_appender::non_blocking(file_appender);
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(logging_appender)
-        .with_ansi(false);
-    let stderr_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(filter_fn(|md| {
-            if let Some(module) = md.module_path()
-                && module.starts_with("rig::")
-            {
-                return false;
-            }
-            // 注意这里的比较是和底层表示数字反过来的.
-            // 下面的比较忽略 TRACE, DEBUG.
-            if *md.level() > Level::INFO {
-                return false;
-            }
-            true
-        }));
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
-    tracing_subscriber::registry()
-        .with(file_layer)
-        .with(stderr_layer)
-        .with(env_filter)
-        .init();
+    logging::init(&config_dir).await?;
 
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;
