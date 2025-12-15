@@ -20,6 +20,12 @@ use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
+/// 盲文 spinner, \u28xx, xx 为 00~ff, 按位顺序从右到左分别表示盲文点: 左上, 左中, 左下, 右上, 右中, 右下, 左底, 右底.
+/// 其中最后两个点如果w位都是 0 那么为六点盲文.
+const SPINNER: [&str; 7] = [
+    "\u{280b}", "\u{2819}", "\u{2838}", "\u{2834}", "\u{2826}", "\u{2807}", "",
+];
+
 #[derive(Debug, Clone)]
 struct ScrolliingMessage {
     /// 滚动的窗口宽度.
@@ -169,8 +175,11 @@ impl ShellCommandGenAgent {
         let scroll = ScrolliingMessage::new(40);
         let finished = Arc::new(AtomicBool::new(false));
         let pb_span = info_span!("Resolving");
-        pb_span
-            .pb_set_style(&ProgressStyle::with_template("{spinner:.green} Agent: {msg}").unwrap());
+        pb_span.pb_set_style(
+            &ProgressStyle::with_template("{spinner:.green} Agent: {msg}")
+                .unwrap()
+                .tick_strings(&SPINNER),
+        );
         pb_span.pb_set_message("Waiting for output...");
         let _pb_span_enter = pb_span.enter();
         let scrolling_handle = {
