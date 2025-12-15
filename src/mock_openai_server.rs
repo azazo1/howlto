@@ -95,7 +95,11 @@ pub struct FunctionDefinition {
 #[serde(untagged)]
 pub enum ToolChoice {
     String(String),
-    Object { #[serde(rename = "type")] tool_type: String, function: FunctionName },
+    Object {
+        #[serde(rename = "type")]
+        tool_type: String,
+        function: FunctionName,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -298,6 +302,72 @@ pub async fn chat_completions(
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
 
+            // 发送工具调用 - finish_response
+            let tool_call_id = format!("call_{}", uuid::Uuid::new_v4());
+
+            // 发送工具调用开始块
+            let tool_call_start = ChatCompletionChunk {
+                id: id.clone(),
+                object: "chat.completion.chunk".to_string(),
+                created: timestamp,
+                model: model.clone(),
+                choices: vec![ChunkChoice {
+                    index: 0,
+                    delta: Delta {
+                        role: None,
+                        content: None,
+                        tool_calls: Some(vec![ToolCallDelta {
+                            index: 0,
+                            id: Some(tool_call_id.clone()),
+                            tool_type: Some("function".to_string()),
+                            function: Some(FunctionCallDelta {
+                                name: Some("finish_response".to_string()),
+                                arguments: None,
+                            }),
+                        }]),
+                    },
+                    finish_reason: None,
+                }],
+            };
+
+            let _ = tx
+                .send(Ok(Event::default().json_data(tool_call_start).unwrap()))
+                .await;
+
+            // 发送工具调用参数块
+            let tool_arguments = serde_json::json!({
+                "results": ["ls -l", "ls -al", "ls -ahl"]
+            })
+            .to_string();
+
+            let tool_call_args = ChatCompletionChunk {
+                id: id.clone(),
+                object: "chat.completion.chunk".to_string(),
+                created: timestamp,
+                model: model.clone(),
+                choices: vec![ChunkChoice {
+                    index: 0,
+                    delta: Delta {
+                        role: None,
+                        content: None,
+                        tool_calls: Some(vec![ToolCallDelta {
+                            index: 0,
+                            id: None,
+                            tool_type: None,
+                            function: Some(FunctionCallDelta {
+                                name: None,
+                                arguments: Some(tool_arguments),
+                            }),
+                        }]),
+                    },
+                    finish_reason: None,
+                }],
+            };
+
+            let _ = tx
+                .send(Ok(Event::default().json_data(tool_call_args).unwrap()))
+                .await;
+
             // 发送结束块
             let end_chunk = ChatCompletionChunk {
                 id,
@@ -311,7 +381,7 @@ pub async fn chat_completions(
                         content: None,
                         tool_calls: None,
                     },
-                    finish_reason: Some("stop".to_string()),
+                    finish_reason: Some("tool_calls".to_string()),
                 }],
             };
 
