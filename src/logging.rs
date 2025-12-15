@@ -10,6 +10,15 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use tokio::fs;
 
+fn file_filter(metadata: &Metadata) -> bool {
+    if let Some(module) = metadata.module_path()
+        && module.starts_with("rig::")
+    {
+        return false;
+    }
+    true
+}
+
 fn stderr_filter(metadata: &Metadata) -> bool {
     // 忽略 rig 的 tracing, 因为它每次调用 api 都会输出 INFO, 不符合使用常理.
     if let Some(module) = metadata.module_path()
@@ -35,7 +44,8 @@ pub async fn init(config_dir: impl AsRef<Path>) -> Result<WorkerGuard, io::Error
     let (logging_appender, guard) = tracing_appender::non_blocking(file_appender);
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(logging_appender)
-        .with_ansi(false);
+        .with_ansi(false)
+        .with_filter(filter_fn(file_filter));
     let indicatif_layer = IndicatifLayer::new();
     let stderr_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
