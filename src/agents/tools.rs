@@ -20,7 +20,7 @@ pub struct HelpArgs {
     subcommands: Vec<String>,
     /// `--help` 中从指定行开始返回内容, 为 [`None`] 则默认为 0 行.
     start_line: Option<usize>,
-    /// `--help` 中读取指定行数, 为 [`None`] 则默认为 100 行.
+    /// `--help` 中读取指定行数, 为 [`None`] 则默认为 50 行.
     read_lines: Option<usize>,
 }
 
@@ -64,7 +64,7 @@ impl Tool for Help {
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 100, which is a reasonable value.",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value.",
                     }
                 },
                 "required": ["program", "subcommands"],
@@ -100,12 +100,12 @@ impl Tool for Help {
             String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(100))
+                .take(args.read_lines.unwrap_or(50))
                 .collect::<String>(),
             String::from_utf8_lossy(&output.stderr)
                 .lines()
                 .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(100))
+                .take(args.read_lines.unwrap_or(50))
                 .collect::<String>()
         ))
     }
@@ -176,7 +176,7 @@ impl Tool for Man {
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 100, which is a reasonable value.",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value.",
                     },
                 },
                 "required": ["entry"],
@@ -239,12 +239,12 @@ impl Tool for Man {
             stdout
                 .lines()
                 .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(100))
+                .take(args.read_lines.unwrap_or(50))
                 .collect::<String>(),
             stderr
                 .lines()
                 .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(100))
+                .take(args.read_lines.unwrap_or(50))
                 .collect::<String>()
         ))
     }
