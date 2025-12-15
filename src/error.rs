@@ -14,7 +14,7 @@ pub enum Error {
     RigError(#[from] rig::http_client::Error),
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
-    #[error("Error streaming: {0}")]
+    #[error("Streaming, {0}")]
     StreamingError(String),
 }
 
