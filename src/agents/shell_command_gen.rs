@@ -243,6 +243,8 @@ impl ShellCommandGenAgent {
         scrolling_handle.await.ok();
         drop(_pb_span_enter);
 
+        eprintln!(); // 为了分开结果输出和进度条, 视觉上更好分辨.
+
         // 暂时只支持使用第一个回应, todo 支持多个回应的交互式选择.
         let finish = finish.results.first().cloned().unwrap_or("".into());
         if finish.is_empty() {
