@@ -102,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
         config: config_dir,
     } = AppArgs::parse();
 
-    logging::init(&config_dir).await?;
+    let _guard = logging::init(&config_dir).await?;
 
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;

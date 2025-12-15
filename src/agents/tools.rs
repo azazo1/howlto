@@ -29,7 +29,7 @@ impl Tool for Help {
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.into(),
+            name: self.name(),
             description: "Get help of the program.".into(),
             parameters: json!({
                 "type": "object",
@@ -116,7 +116,7 @@ impl Tool for Man {
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
-            name: Self::NAME.into(),
+            name: self.name(),
             description: "Get man page help messages".into(),
             parameters: json!({
                 "type": "object",
@@ -177,5 +177,63 @@ impl Tool for Man {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ))
+    }
+}
+
+/// 结束输出, 给定输出结果
+pub struct FinishResponse;
+
+/// 输出结果
+#[derive(serde::Deserialize)]
+pub struct FinishResponseArgs {
+    pub results: Vec<String>,
+}
+
+impl FinishResponseArgs {
+    pub fn empty() -> Self {
+        Self {
+            results: Vec::new(),
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum NoError {}
+
+impl Tool for FinishResponse {
+    const NAME: &'static str = "finish_response";
+
+    type Error = NoError;
+
+    type Args = FinishResponseArgs;
+
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name(),
+            description: "The mandatory tool used to finalize the interaction and present the generated answer(s) to the user. \
+                Input should be a list of string segments forming the complete, final response.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "description": "One item of the response."
+                        },
+                        "description": "A list of string segments that collectively form the complete, \
+                            formatted final answer to the user's request."
+                    }
+                },
+                "required": ["results"],
+            }),
+        }
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // 在 stream_prompt 的输出被监听.
+        Ok("ok".into())
     }
 }

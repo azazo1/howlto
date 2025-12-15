@@ -32,12 +32,19 @@ pub struct AppConfig {
     /// 模型输出语言.
     #[serde(default = "default_language")]
     pub language: String,
+    /// Shell Comamnd Gen 输出的命令个数.
+    #[serde(default = "default_output_commands_n")]
+    pub output_commands_n: u32,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+fn default_output_commands_n() -> u32 {
+    3
 }
 
 fn default_language() -> String {
