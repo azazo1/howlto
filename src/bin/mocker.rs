@@ -8,7 +8,10 @@ use tokio::{fs, io::AsyncWriteExt};
 use tracing::Level;
 
 const DEFAULT_CONFIG_FILE: &str = "~/.config/howlto/mocker.toml";
-const DEFAULT_RESPONSES: &[(&str, &str)] = &[("rg 如何忽略某些后缀名的文件", "")];
+const DEFAULT_RESPONSES: &[(&str, &str)] = &[(
+    "test",
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+)];
 
 #[derive(clap::Parser)]
 #[clap(about = "伪装大模型端点测试工具", long_about = None)]
