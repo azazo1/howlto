@@ -2,8 +2,10 @@ use std::{path::PathBuf, process::Stdio};
 
 use rig::{completion::ToolDefinition, tool::Tool};
 use serde_json::json;
-use tokio::io;
+use tokio::io::{self, AsyncReadExt};
 use tracing::debug;
+
+// todo 限制读取行数或者提供参数.
 
 /// 获取 --help 内容
 pub struct Help;
@@ -123,7 +125,9 @@ impl Tool for Man {
                 "properties": {
                     "entry": {
                         "type": "string",
-                        "description": "Man page entry name."
+                        "description": "Man page entry name, which should not have whitespaces, \
+                            if you want to get help of the subcommand of a program, \
+                            pass the program name here and check inside."
                     },
                     "section": {
                         "type": "number",
@@ -161,22 +165,40 @@ impl Tool for Man {
                 "man program not found, this tool is not available now.",
             ))?
         };
-        let mut command = tokio::process::Command::new(man_program);
+        let Ok(col_program) = which::which("col") else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "col program not found, this tool is not available now.",
+            ))?
+        };
+        let mut command1 = tokio::process::Command::new(man_program);
+        let mut command2 = tokio::process::Command::new(col_program);
         if let Some(section) = args.section {
-            command.arg(section.to_string());
+            command1.arg(section.to_string());
         }
-        command
+        command1
             .arg(entry)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        debug!(target: "tool-man", "Calling command {:?}...", command);
-        let output = command.output().await?;
-        Ok(format!(
-            "stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ))
+        let mut child1 = command1.spawn()?;
+        command2
+            .arg("-b")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped());
+        let mut child2 = command2.spawn()?;
+        tokio::io::copy(
+            &mut child1.stdout.take().unwrap(),
+            &mut child2.stdin.take().unwrap(),
+        )
+        .await?;
+        debug!(target: "tool-man", "Calling command {:?} | {:?}...", command1, command2);
+        child2.wait().await?;
+        let mut stderr = String::new();
+        let mut stdout = String::new();
+        child1.stderr.unwrap().read_to_string(&mut stderr).await?;
+        child2.stdout.unwrap().read_to_string(&mut stdout).await?;
+        Ok(format!("stdout:\n{}\nstderr:\n{}", stdout, stderr))
     }
 }
 
