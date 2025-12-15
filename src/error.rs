@@ -14,6 +14,8 @@ pub enum Error {
     RigError(#[from] rig::http_client::Error),
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
+    #[error("Error streaming: {0}")]
+    StreamingError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -9,7 +9,10 @@ use howlto::profile::Profiles;
 use howlto::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::{config::DEFAULT_CONFIG_DIR, profile::Profile};
 use tokio::{fs, io};
-use tracing::Level;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(clap::Parser)]
 #[clap(about, long_about=None, version, author)]
@@ -97,15 +100,27 @@ fn detect_shell() -> String {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    #[cfg(debug_assertions)]
-    tracing_subscriber::fmt()
-        .with_max_level(Level::ERROR)
-        .init();
-
     let AppArgs {
         prompt,
         config: config_dir,
     } = AppArgs::parse();
+
+    // 输出日志
+    let logs_dir = config_dir.join("logs");
+    if !logs_dir.is_dir() {
+        fs::create_dir(logs_dir).await?;
+    }
+    let file_appender =
+        RollingFileAppender::new(Rotation::DAILY, config_dir.join("logs"), "howlto.log");
+    let (logging_appender, _guard) = tracing_appender::non_blocking(file_appender);
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(logging_appender)
+        .with_ansi(false);
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+    tracing_subscriber::registry()
+        .with(file_layer)
+        .with(env_filter)
+        .init();
 
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;
@@ -113,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     if prompt.is_empty() {
         todo!("interact mode")
     } else {
-        let prompt: String = prompt.into_iter().collect();
+        let prompt: String = prompt.join(" ");
         ShellCommandGenAgent::builder()
             .profile(
                 profiles

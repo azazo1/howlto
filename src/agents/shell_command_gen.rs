@@ -1,13 +1,14 @@
 use crate::agents::tools::{Help, Man};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::{config::AppConfig, profile::Profile};
 use reqwest::header::HeaderMap;
-use rig::agent::{Agent as RigAgent, stream_to_stdout};
+use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem, stream_to_stdout};
 use rig::client::CompletionClient;
 use rig::message::{AssistantContent, Message};
 use rig::providers::openai::{self, CompletionModel};
-use rig::streaming::StreamingPrompt;
-use tracing::debug;
+use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
+use tokio_stream::StreamExt;
+use tracing::{debug, warn};
 
 pub struct ShellCommandGenAgent {
     /// 代表操作系统的字符串.
@@ -80,9 +81,38 @@ impl ShellCommandGenAgent {
 
     /// shell command agent 解决一个 `prompt`.
     pub async fn resolve(&self, prompt: String) -> Result<ShellCommandGenAgentResponse> {
+        // stream_prompt 会自动处理工具的调用.
         let mut stream = self.agent.stream_prompt(&prompt).await;
-        let output = stream_to_stdout(&mut stream).await?; // todo 替换为更美观的输出.
-        debug!(target: "shell-command-gen-agent", "Usage: {:?}", output.usage());
+        let mut output = FinalResponse::empty();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
+            use MultiTurnStreamItem::*;
+            use StreamedAssistantContent::*;
+            match chunk {
+                StreamAssistantItem(content) => match content {
+                    Text(text) => print!("{}", text.text),
+                    ToolCall(tool_call) => {
+                        println!(
+                            "toolcall: {}, {}",
+                            tool_call.function.name, tool_call.function.arguments
+                        );
+                    }
+                    Reasoning(reasoning) => {
+                        print!("{}", reasoning.reasoning.into_iter().collect::<String>())
+                    }
+                    _ => (),
+                },
+                StreamUserItem(content) => {
+                    let StreamedUserContent::ToolResult(rst) = content;
+                    dbg!(rst.content);
+                }
+                FinalResponse(final_response) => {
+                    // 这个包含了完整的输出.
+                    output = final_response;
+                }
+                _ => warn!("unknown stream chunk"),
+            }
+        }
         Ok(ShellCommandGenAgentResponse {
             messages: [
                 prompt.into(),

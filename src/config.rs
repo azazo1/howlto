@@ -45,10 +45,6 @@ fn default_use_tool_help() -> bool {
     true
 }
 
-fn default_max_tokens() -> u64 {
-    1024
-}
-
 fn default_model() -> String {
     "gpt-4o".to_string()
 }
