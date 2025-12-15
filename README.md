@@ -7,5 +7,13 @@
 - [ ] 简单调用, e.g: `howlto create a rust project?`.
 - [ ] 修改提供的命令.
 - [ ] 自动读取命令的 `--help` / `man` / `tldr`.
+- [ ] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能.
 - [ ] shell 集成, 自动补全.
+- [ ] 生成 completions 脚本.
+- [ ] 一次请求生成多个结果.
+- [ ] 使用 ratatui 显示 tui 界面(嵌入在原来的 shell 之中, 非新开一个屏幕), 在交互结束之后回到原来的光标位置.
+- [ ] 显示 markdown 内容.
+- [ ] 添加根据上次输入命令自动修正命令, 和 `howlto git push -up origin main` -> `git push -u origin main` 这样的命令自动修正功能.
+- [ ] 提供一个接口来查询当前的 token 使用情况.
+- [ ] howlto 直接执行进入交互模式.

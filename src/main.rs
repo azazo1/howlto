@@ -2,16 +2,20 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use howlto::agents::shell_command_gen::ShellCommandGenAgent;
 use howlto::config::{AppConfig, CONFIG_TOML_FILE, PROFILES_TOML_FILE};
-use howlto::error::Result;
+use howlto::error::{Error, Result};
 use howlto::profile::Profiles;
+use howlto::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::{config::DEFAULT_CONFIG_DIR, profile::Profile};
 use tokio::{fs, io};
+use tracing::Level;
 
 #[derive(clap::Parser)]
 #[clap(about, long_about=None, version, author)]
 struct AppArgs {
-    #[clap(num_args=1..)]
+    /// 提示词, 当其为空的时候, 进入交互模式.
+    #[clap(num_args=0..)]
     prompt: Vec<String>,
     #[clap(short, long, help = "配置文件所在的目录", default_value = DEFAULT_CONFIG_DIR)]
     config: PathBuf,
@@ -70,8 +74,34 @@ impl AppConfigLoader {
     }
 }
 
+/// 获取当前 shell 的字符串表示.
+fn detect_shell() -> String {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System, get_current_pid};
+    macro_rules! fall_back_to_unknown {
+        ($e:expr) => {{
+            let Some(x) = $e else {
+                return "Unknown".into();
+            };
+            x
+        }};
+    }
+    let pid = fall_back_to_unknown!(get_current_pid().ok());
+    let system = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+    );
+    let cur_proc = fall_back_to_unknown!(system.process(pid));
+    let parent_pid = fall_back_to_unknown!(cur_proc.parent());
+    let parent = fall_back_to_unknown!(system.process(parent_pid));
+    parent.name().to_string_lossy().into()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(debug_assertions)]
+    tracing_subscriber::fmt()
+        .with_max_level(Level::ERROR)
+        .init();
+
     let AppArgs {
         prompt,
         config: config_dir,
@@ -80,6 +110,23 @@ async fn main() -> anyhow::Result<()> {
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;
     let profiles = config_loader.load_or_create_profiles().await?;
-    dbg!((config, profiles));
+    if prompt.is_empty() {
+        todo!("interact mode")
+    } else {
+        let prompt: String = prompt.into_iter().collect();
+        ShellCommandGenAgent::builder()
+            .profile(
+                profiles
+                    .get(SHELL_COMMAND_GEN_PROFILE)
+                    .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
+                    .clone(),
+            )
+            .os(std::env::consts::OS.to_string())
+            .shell(detect_shell())
+            .config(config)
+            .build()?
+            .resolve(prompt)
+            .await?;
+    }
     Ok(())
 }

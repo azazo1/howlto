@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
@@ -14,6 +12,20 @@ pub struct AppConfig {
     /// LLM 提供商 base url.
     #[serde(default)]
     pub llm_base_url: String,
+    /// agent 使用的 LLM 模型.
+    #[serde(default = "default_model")]
+    pub model: String,
+    /// LLM 输出 max_tokens
+    pub max_tokens: Option<u64>,
+    /// LLM 输出 temperature 参数.
+    pub temperature: Option<f64>,
+    /// 是否使用 man page 帮助工具辅助 agent 生成内容, 在 windows 下调用可能会失败.
+    #[serde(default = "default_use_tool_man")]
+    pub use_tool_man: bool,
+    /// 是否使用 --help 帮助工具辅助 agent 生成内容,
+    /// 是否能够执行成功取决与程序是否接受 `--help`参数.
+    #[serde(default = "default_use_tool_help")]
+    pub use_tool_help: bool,
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存.
     pub cache: bool,
@@ -25,8 +37,20 @@ impl Default for AppConfig {
     }
 }
 
-fn default_config_path() -> PathBuf {
-    "~/.config/howlto/".into()
+fn default_use_tool_man() -> bool {
+    true
+}
+
+fn default_use_tool_help() -> bool {
+    true
+}
+
+fn default_max_tokens() -> u64 {
+    1024
+}
+
+fn default_model() -> String {
+    "gpt-4o".to_string()
 }
 
 fn default_cache() -> bool {

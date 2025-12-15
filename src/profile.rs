@@ -1,17 +1,21 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
+
+use profiles::*;
+use template::*;
 
 pub mod template {
     pub const TEXT_LANG: &str = "{{text_lang}}";
     pub const SHELL: &str = "{{shell}}";
     pub const OS: &str = "{{os}}";
-    pub const PROMPT: &str = "{{prompt}}";
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+pub mod profiles {
+    pub const SHELL_COMMAND_GEN_PROFILE: &str = "shell-command-gen";
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Profile {
-    /// LLM 的自我认知提示词, 用于实现不同的功能.
+    /// LLM 的自我认知系统提示词, 用于实现不同的功能.
     pub role: String,
     /// profile 的名称.
     pub name: String,
@@ -43,7 +47,6 @@ impl Profile {
     }
 
     pub fn defaults() -> Vec<Self> {
-        use template::*;
         [Self::new(
             format!(
                 r#"You are Shell Command Generator who always speak in language: {TEXT_LANG}.
@@ -53,13 +56,15 @@ Ensure the output is a valid shell command.
 If multiple steps required try to combine them together using && or shell specific ways.
 Provide only plain text without Markdown formatting.
 Do not provide markdown formatting such as ```.
-ALWAYS response in LANGUAGE: {TEXT_LANG}.
-User's prompt is below:
+ALWAYS response in LANGUAGE: {TEXT_LANG}, if needed in the command.
 
-{PROMPT}
+There are tools you can call.
+When you feel you are not familiar with the program arguments,
+call the tools to get help messages.
+DO NOT output the command that you are not sure about.
 "#
             ),
-            "codegen".into(),
+            SHELL_COMMAND_GEN_PROFILE.into(),
         )]
         .into()
     }

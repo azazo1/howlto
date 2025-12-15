@@ -2,16 +2,13 @@
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
-use howlto::openai_server::{AppState, create_app};
+use howlto::mock_openai_server::{AppState, create_app};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncWriteExt};
 use tracing::Level;
 
 const DEFAULT_CONFIG_FILE: &str = "~/.config/howlto/mocker.toml";
-const DEFAULT_RESPONSES: &[(&str, &str)] = &[
-    ("你好", "你好, 我是一个简单的大模型服务器"),
-    ("可以帮我写代码吗", "当然可以, 我可以帮你写代码"),
-];
+const DEFAULT_RESPONSES: &[(&str, &str)] = &[("rg 如何忽略某些后缀名的文件", "")];
 
 #[derive(clap::Parser)]
 #[clap(about = "伪装大模型端点测试工具", long_about = None)]
@@ -43,22 +40,13 @@ async fn main() -> anyhow::Result<()> {
         address,
     } = MockerArgs::parse();
     let config_path = PathBuf::from(shellexpand::tilde(&config_path.to_string_lossy()).to_string());
-    let default_config_path = PathBuf::from(shellexpand::tilde(DEFAULT_CONFIG_FILE).to_string());
-    if config_path == default_config_path && !config_path.is_file() {
-        // 如果是默认配置文件地址, 那么自动创建.
-        fs::create_dir_all(
-            config_path
-                .parent()
-                .ok_or(anyhow::anyhow!("无法创建配置文件目录"))?,
-        )
-        .await?;
+    if !config_path.is_file() {
         let mut f = fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
             .open(&config_path)
             .await?;
-
         let default_config = MockerConfig {
             responses: DEFAULT_RESPONSES
                 .iter()

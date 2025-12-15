@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::info;
 
 // OpenAI API 数据结构
 #[derive(Debug, Deserialize)]
@@ -115,6 +116,7 @@ pub async fn chat_completions(
         .find(|m| m.role == "user")
         .map(|m| m.content.clone())
         .unwrap_or_default();
+    info!(target: "mock-openai-server", "User prompt: {}", user_message);
 
     // 在映射中查找响应
     let response_content = state
