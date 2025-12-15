@@ -82,11 +82,14 @@ DO NOT call a tool that is not exists.
 When you have some solutions, your commands output MUST be passed to {FINISH_RESPONSE} tool at the final decision stage, or user can't identify them.
 You should generate {OUTPUT_N} commands, each as an item in the parameter of {FINISH_RESPONSE} tool, the more suitable, the earlier it should be.
 Ensure the commands are valid commands, without any markdown style!
-DO NOT quote your response using ``, '', "" or anything else.
+DO NOT quote arguments using ``, '', "" or anything else.
+The arguments supplied to the {FINISH_RESPONSE} tool must consist only of a single, syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions and newline characters like `\n` are strictly PROHIBITED within the command string.
 
 If you cannot come up with any solution, DO NOT call the {FINISH_RESPONSE} tool.
 Instead, provide your reasons in plain text output.
 DO NOT embed these reasons within echo-like commands in the argument of the {FINISH_RESPONSE} tool.
+
+DO NOT call {FINISH_RESPONSE} twice. once you call it, you should stop outputing anything.
 
 ## Text Language
 
