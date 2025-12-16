@@ -2,6 +2,12 @@
 
 一个命令行工具, 帮你快速找到想要使用的命令.
 
+如火箭般快🚀, 比一张纸还便宜🤩, 而且要求非常低🗿, 仅仅靠 `gpt-4o-mini` 就能驱动.
+
+## Demo
+
+<!-- todo 放置 demo 视频. -->
+
 ## 使用
 
 直接像普通的英语句子一样提问:
@@ -24,7 +30,7 @@ howlto -pq list all files
 howlto -pq list all files | head -n 1 | xargs $SHELL -c
 ```
 
-> [!warning] 潜在的危险
+> [!WARNING]
 > 这个命令会直接执行模型输出的命令, 务必谨慎小心.
 
 ## 🗺️ Route
