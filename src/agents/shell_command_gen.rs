@@ -123,37 +123,38 @@ impl ShellCommandGenAgent {
             })
             .build()?;
         let model = openai::Client::<reqwest::Client>::builder()
-            .base_url(&config.llm_base_url)
-            .api_key(&config.llm_api_key)
+            .base_url(&config.llm.llm_base_url)
+            .api_key(&config.llm.llm_api_key)
             .http_client(http_client)
             .build()?
             .completions_api()
-            .completion_model(&config.model);
+            .completion_model(&config.llm.model);
         let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(
             &profile
                 .role
                 .replace(template::OS, &os)
                 .replace(template::SHELL, &shell)
-                .replace(template::TEXT_LANG, &config.language)
+                .replace(template::TEXT_LANG, &config.agent.language)
                 .replace(
                     template::MAX_TOKENS,
                     &config
+                        .llm
                         .max_tokens
                         .map(|x| x.to_string())
                         .unwrap_or("[none]".into()),
                 )
-                .replace(template::OUTPUT_N, &config.output_commands_n.to_string()),
+                .replace(template::OUTPUT_N, &config.agent.shell_command_gen.output_n.to_string()),
         );
-        if let Some(max_tokens) = config.max_tokens {
+        if let Some(max_tokens) = config.llm.max_tokens {
             builder = builder.max_tokens(max_tokens);
         }
-        if let Some(temperature) = config.temperature {
+        if let Some(temperature) = config.llm.temperature {
             builder = builder.temperature(temperature);
         };
-        if config.use_tool_man {
+        if config.agent.use_tool_man {
             builder = builder.tool(Man);
         }
-        if config.use_tool_help {
+        if config.agent.use_tool_help {
             builder = builder.tool(Help);
         }
         builder = builder.tool(FinishResponse);
@@ -247,7 +248,7 @@ impl ShellCommandGenAgent {
             }
         }
         finished.store(true, Ordering::Relaxed);
-        if !self.config.wait_for_output {
+        if !self.config.agent.shell_command_gen.wait_for_output {
             scrolling_handle.abort();
         }
         scrolling_handle.await.ok();

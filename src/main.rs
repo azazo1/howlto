@@ -107,6 +107,12 @@ async fn main() -> anyhow::Result<()> {
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;
     let profiles = config_loader.load_or_create_profiles().await?;
+
+    // 提前检查
+    if config.llm.llm_base_url.is_empty() {
+        Err(anyhow::anyhow!("LLM base url is empty."))?
+    }
+
     if prompt.is_empty() {
         todo!("interact mode")
     } else {
