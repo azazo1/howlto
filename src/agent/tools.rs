@@ -1,6 +1,7 @@
-use std::{path::PathBuf, process::Stdio};
+use std::{io::ErrorKind, path::PathBuf, process::Stdio};
 
 use rig::{completion::ToolDefinition, tool::Tool};
+use serde::Deserialize;
 use serde_json::json;
 use tokio::io::{self, AsyncReadExt};
 use tracing::debug;
@@ -256,6 +257,72 @@ impl Tool for Man {
                 .skip(start_line)
                 .take(read_lines)
                 .collect::<String>()
+        ))
+    }
+}
+
+/// 调用 tldr 获取帮助.
+pub struct Tldr;
+
+#[derive(Debug, Deserialize)]
+pub struct TldrArgs {
+    page: Vec<String>,
+}
+
+impl Tool for Tldr {
+    const NAME: &'static str = "tldr";
+
+    type Error = io::Error;
+
+    type Args = TldrArgs;
+
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name(),
+            description: "Get tldr (Too Long Don't Read) help.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "description": "A layer of page"
+                        },
+                        "description": "The page name you want to query, e.g. if you want to query git help, pass [\"git\"], if you want to query git commit, pass [\"git\", \"commit\"]."
+                    }
+                },
+                "required": ["page"],
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let tldr_program = which::which("tldr").map_err(|_| {
+            io::Error::new(
+                ErrorKind::NotFound,
+                "tldr program not found, this tool is invalid now.",
+            )
+        })?;
+        // 尝试使用空格拆分.
+        let page: Vec<_> = args
+            .page
+            .iter()
+            .flat_map(|x| x.split_whitespace())
+            .collect();
+
+        let mut command = tokio::process::Command::new(tldr_program);
+        command.args(page);
+
+        debug!(target: "tool-tldr", "Calling command: {:?}...", command);
+
+        let output = command.output().await?;
+        Ok(format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         ))
     }
 }

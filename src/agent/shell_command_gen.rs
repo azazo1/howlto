@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man};
+use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
 use crate::config::profile::template;
 use crate::config::{AppConfig, profile::Profile};
 use crate::error::{Error, Result};
@@ -159,6 +159,9 @@ impl ShellCommandGenAgent {
         }
         if config.agent.use_tool_help {
             builder = builder.tool(Help);
+        }
+        if config.agent.use_tool_tldr {
+            builder = builder.tool(Tldr);
         }
         builder = builder.tool(FinishResponse);
         Ok(Self {

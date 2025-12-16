@@ -40,8 +40,11 @@ pub struct AgentConfig {
     /// 是否能够执行成功取决与程序是否接受 `--help`参数.
     #[serde(default = "default_use_tool_help")]
     pub use_tool_help: bool,
+    /// 是否使用 tldr 获取帮助信息.
+    #[serde(default = "default_use_tool_tldr")]
+    pub use_tool_tldr: bool,
     #[serde(default = "default_cache")]
-    /// 是否使用对话缓存.
+    /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
     /// 模型输出语言.
     #[serde(default = "default_language")]
@@ -109,5 +112,9 @@ fn default_model() -> String {
 }
 
 fn default_cache() -> bool {
+    true
+}
+
+fn default_use_tool_tldr() -> bool {
     true
 }

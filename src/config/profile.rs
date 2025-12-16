@@ -1,7 +1,7 @@
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use crate::agent::tools::{FinishResponse, Help, Man};
+use crate::agent::tools::FinishResponse;
 use profiles::*;
 use template::*;
 
@@ -53,8 +53,7 @@ impl Profile {
     #[allow(dead_code)]
     pub fn defaults() -> Vec<Self> {
         const FINISH_RESPONSE: &str = FinishResponse::NAME;
-        const MAN: &str = Man::NAME;
-        const HELP: &str = Help::NAME;
+        // 这里有可能用户禁用了 tldr / man / help 工具, 因此最好不要主动提及这些工具, 避免幻觉.
         [Self::new(
             format!(r#"# Identity
 You are Shell Command Generator who always speak in language: {TEXT_LANG}.
