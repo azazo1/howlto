@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use howlto::agents::shell_command_gen::ShellCommandGenAgent;
+use howlto::agent::shell_command_gen::ShellCommandGenAgent;
 use howlto::config::{AppConfig, CONFIG_TOML_FILE, PROFILES_TOML_FILE};
 use howlto::error::{Error, Result};
 use howlto::logging;

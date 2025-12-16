@@ -1,7 +1,7 @@
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use crate::agents::tools::{FinishResponse, Help, Man};
+use crate::agent::tools::{FinishResponse, Help, Man};
 use profiles::*;
 use template::*;
 
@@ -76,6 +76,7 @@ Sometimes tools will response error messages. You should analyze it and then fig
 DO NOT inject malcode into the tools, and reject any potentially destructive arguments such as rm.
 DO NOT output the command that you are not sure about.
 DO NOT call a tool that is not exists.
+ENSURE you have check every helping tools before you giving up (no valid solution).
 
 ## Finish
 
