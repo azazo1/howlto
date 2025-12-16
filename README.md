@@ -18,3 +18,4 @@
 - [x] 添加根据上次输入命令自动修正命令, 和 `howlto -- git push -up origin main` -> `git push -u origin main` 这样的命令自动修正功能.
 - [ ] howlto 直接执行进入交互模式.
 - [x] indicatif 实时显示模型输出在一行.
+- [ ] url 网页内容访问, 网页搜索.
