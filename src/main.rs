@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::process::Stdio;
 
 use clap::Parser;
+use clipboard_rs::Clipboard;
 use howlto::agent::shell_command_gen::ShellCommandGenAgent;
 use howlto::config::AppConfigLoader;
 use howlto::config::DEFAULT_CONFIG_DIR;
@@ -8,6 +10,7 @@ use howlto::config::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::detect_shell;
 use howlto::error::Error;
 use howlto::logging;
+use howlto::tui::select::ActionKind;
 use howlto::tui::select::CommandSelectApp;
 
 const ABOUT: &str = "一个能帮你找到心仪命令的 CLI 工具.";
@@ -61,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         // todo 移动到专门的模块, 和 shell_command_gen.rs select.rs 结合起来.
         let prompt: String = prompt.join(" ");
-        let (shell_name, _shell_path) = detect_shell();
+        let (shell_name, shell_path) = detect_shell();
         let response = ShellCommandGenAgent::builder()
             .profile(
                 profiles
@@ -80,8 +83,53 @@ async fn main() -> anyhow::Result<()> {
         } else if !response.commands.is_empty() {
             let action = CommandSelectApp::select(response.commands.clone()).await?;
             if let Some(action) = action {
-                println!("selected: {action:?}");
-                // todo 响应 action
+                match action.kind {
+                    ActionKind::Copy => {
+                        let cx = clipboard_rs::ClipboardContext::new()
+                            .map_err(|_| anyhow::anyhow!("Failed to access clipboard."))?;
+                        cx.set_text(action.command)
+                            .map_err(|_| anyhow::anyhow!("Failed to copy."))?;
+                    }
+                    ActionKind::Execute => {
+                        let mut child = tokio::process::Command::new(shell_path)
+                            .arg("-c")
+                            .arg(action.command)
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::piped())
+                            .stdin(Stdio::piped())
+                            .spawn()?;
+                        let mut child_stdin = child
+                            .stdin
+                            .take()
+                            .ok_or(anyhow::anyhow!("cannot take child stdin"))?;
+                        let mut child_stdout = child
+                            .stdout
+                            .take()
+                            .ok_or(anyhow::anyhow!("cannot take child stdout"))?;
+                        let mut child_stderr = child
+                            .stderr
+                            .take()
+                            .ok_or(anyhow::anyhow!("cannot take child stderr"))?;
+                        let stdin_handle = tokio::spawn(async move {
+                            tokio::io::copy(&mut tokio::io::stdin(), &mut child_stdin).await
+                        });
+                        let stdout_handle = tokio::spawn(async move {
+                            tokio::io::copy(&mut child_stdout, &mut tokio::io::stdout()).await
+                        });
+                        let stderr_handle = tokio::spawn(async move {
+                            tokio::io::copy(&mut child_stderr, &mut tokio::io::stderr()).await
+                        });
+                        let (rin, rout, rerr) =
+                            tokio::try_join!(stdin_handle, stdout_handle, stderr_handle)?;
+                        rin?;
+                        rout?;
+                        rerr?;
+                    }
+                    ActionKind::Modify => todo!("实现修改逻辑"),
+                    ActionKind::Print => {
+                        println!("{}", action.command);
+                    }
+                }
             }
         }
     }

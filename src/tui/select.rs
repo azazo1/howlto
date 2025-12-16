@@ -15,7 +15,8 @@ use tokio_stream::StreamExt;
 
 const TITLE: &str = "Select Command";
 const TITLE_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
-const HINT_TITLE: &str = "j/k: up/down | m: modify | c: copy | enter: execute | q/esc: quit";
+const HINT_TITLE: &str =
+    "j/k: up/down | m: modify | c: copy | e: execute | enter: print | q/esc: quit";
 const HINT_TITLE_STYLE: Style = Style::new().fg(Color::Gray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
@@ -46,6 +47,7 @@ pub enum ActionKind {
     Copy,
     Execute,
     Modify,
+    Print,
 }
 
 struct CommandSelectWidget {
@@ -66,6 +68,7 @@ enum AppEvent {
     Enter,
     C,
     M,
+    E,
     Error(io::Error),
     // todo 添加一个 tab 直接粘贴到下一个 shell 输入中, 可能需要 shell 集成脚本.
 }
@@ -159,6 +162,9 @@ impl CommandSelectApp {
                         KeyCode::Char('m') if kevt.modifiers.is_empty() => {
                             break_on_error!(tx.send(AppEvent::M));
                         }
+                        KeyCode::Char('e') if kevt.modifiers.is_empty() => {
+                            break_on_error!(tx.send(AppEvent::E));
+                        }
                         KeyCode::Enter if kevt.modifiers.is_empty() => {
                             break_on_error!(tx.send(AppEvent::Enter));
                         }
@@ -196,10 +202,11 @@ impl CommandSelectApp {
                 AppEvent::Up => self.widget.list_state.select_previous(),
                 AppEvent::Down => self.widget.list_state.select_next(),
                 AppEvent::Quit => break Ok(None),
-                AppEvent::Enter => break Ok(self.action_result(ActionKind::Execute)),
+                AppEvent::Enter => break Ok(self.action_result(ActionKind::Print)),
                 AppEvent::C => break Ok(self.action_result(ActionKind::Copy)),
                 AppEvent::M => break Ok(self.action_result(ActionKind::Modify)),
                 AppEvent::Error(e) => break Err(e),
+                AppEvent::E => break Ok(self.action_result(ActionKind::Execute)),
             }
         };
         handle.abort();
