@@ -5,8 +5,6 @@ use serde_json::json;
 use tokio::io::{self, AsyncReadExt};
 use tracing::debug;
 
-// todo 限制读取行数或者提供参数.
-
 /// 获取 --help 内容
 pub struct Help;
 
