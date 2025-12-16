@@ -11,10 +11,12 @@ use howlto::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::{config::DEFAULT_CONFIG_DIR, profile::Profile};
 use tokio::{fs, io};
 
+const ABOUT: &str = "一个能帮你找到心仪命令的 CLI 工具.";
+
 #[derive(clap::Parser)]
-#[clap(about, long_about=None, version, author)]
+#[clap(about = ABOUT, long_about=None, version, author)]
 struct AppArgs {
-    /// 提示词, 当其为空的时候, 进入交互模式.
+    /// 命令生成提示词, 当其为空的时候, 进入交互模式.
     #[clap(num_args=0..)]
     prompt: Vec<String>,
     #[clap(short, long, help = "配置文件所在的目录", default_value = DEFAULT_CONFIG_DIR)]
