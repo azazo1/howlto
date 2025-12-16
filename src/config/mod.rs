@@ -108,7 +108,7 @@ fn default_use_tool_help() -> bool {
 }
 
 fn default_model() -> String {
-    "gpt-4o".to_string()
+    "gpt-4o-mini".to_string()
 }
 
 fn default_cache() -> bool {
