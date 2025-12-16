@@ -7,7 +7,6 @@ use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
 use crate::config::profile::template;
 use crate::config::{AppConfig, profile::Profile};
 use crate::error::{Error, Result};
-use indicatif::ProgressStyle;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
 use rig::client::CompletionClient;
@@ -19,6 +18,7 @@ use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
+use tracing_indicatif::style::ProgressStyle;
 
 /// 盲文 spinner, \u28xx, xx 为 00~ff, 按位顺序从右到左分别表示盲文点: 左上, 左中, 左下, 右上, 右中, 右下, 左底, 右底.
 /// 其中最后两个点如果w位都是 0 那么为六点盲文.
