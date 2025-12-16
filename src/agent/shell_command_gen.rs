@@ -14,7 +14,7 @@ use rig::message::{AssistantContent, Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
 use rig::tool::Tool;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
@@ -31,7 +31,9 @@ struct ScrolliingMessage {
     /// 滚动的窗口宽度.
     scroll_width: usize,
     scroll_window: Arc<Mutex<VecDeque<char>>>,
-    message: Arc<Mutex<String>>,
+    message: Arc<RwLock<String>>,
+    /// 字节索引.
+    message_read_cursor: Arc<Mutex<usize>>,
 }
 
 impl ScrolliingMessage {
@@ -39,31 +41,38 @@ impl ScrolliingMessage {
         Self {
             scroll_width,
             scroll_window: Arc::new(Mutex::new(VecDeque::new())),
-            message: Arc::new(Mutex::new(String::new())),
+            message: Arc::new(RwLock::new(String::new())),
+            message_read_cursor: Arc::new(Mutex::new(0)),
         }
     }
 
+    /// 获取累计的所有内容.
+    async fn message(&self) -> String {
+        self.message.read().await.clone()
+    }
+
     async fn push(&self, appendant: String) {
-        let mut message = self.message.lock().await;
-        *message += &appendant.replace("\n", " ");
+        let mut message = self.message.write().await;
+        *message += &appendant;
     }
 
     async fn has_new_messages(&self) -> bool {
-        let message = self.message.lock().await;
+        let message = self.message.read().await;
         !message.is_empty()
     }
 
     /// 返回实际 pop 的字符数和对应字符串.
     async fn pop(&self, chars: usize) -> (usize, String) {
-        let mut message = self.message.lock().await;
-        let idx = message
+        let message = self.message.read().await;
+        let mut cursor = self.message_read_cursor.lock().await;
+        let idx = message[*cursor..]
             .char_indices()
             .nth(chars)
             .map(|(idx, _)| idx)
-            .unwrap_or(message.len());
-        let rst = message[..idx].to_string();
-        *message = message[idx..].to_string();
-        (idx, rst)
+            .unwrap_or(message[*cursor..].len());
+        *cursor += idx;
+        let rst = message[..*cursor].to_string();
+        (rst.chars().count(), rst)
     }
 
     /// - `step`: 滚动字符数
@@ -110,11 +119,7 @@ impl ShellCommandGenAgent {
 }
 
 impl ShellCommandGenAgent {
-    #[tracing::instrument(
-        name = "ShellCommandGenAgent::new",
-        level = "info",
-        skip(profile, config)
-    )]
+    #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
     pub fn new(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
         // 添加 Content-Type: application/json 请求头.
         let http_client = reqwest::Client::builder()
@@ -272,13 +277,16 @@ impl ShellCommandGenAgent {
         scrolling_handle.await.ok();
         drop(_pb_span_enter);
 
-        // 暂时只支持使用第一个回应, todo 支持多个回应的交互式选择.
         let finish = finish.results;
+        // todo 这里使用 ratatui 输出对话框.
         if finish.is_empty() {
             warn!("No command provided.");
-            info!("Shell Command Gen Agent: {}", output.response());
+            info!("ShellCommandGenAgent: {}", output.response());
+        } else if output.response().is_empty() {
+            // 获取了 finish 之后可能会没有及时获取 final response, 导致 output.response() 为空.
+            info!("ShellCommandGenAgnet: {}", scroll.message().await);
         } else {
-            // eprintln!(); // 为了分开结果输出和 tracing 输出, 视觉上更好分辨. // 这个调用之后会导致进度条无法正常关闭.
+            info!("ShellCommandGenAgent: {}", output.response());
         }
         let output = format!("{}\n{}", output.response(), finish.join("\n"));
         Ok(ShellCommandGenAgentResponse {

@@ -69,9 +69,10 @@ async fn main() -> anyhow::Result<()> {
         if plain {
             println!("{}", response.commands.join("\n"));
         } else if !response.commands.is_empty() {
-            let selected = CommandSelectApp::select(response.commands.clone()).await?;
-            if let Some(selected) = selected {
-                println!("selected: {selected:?}");
+            let action = CommandSelectApp::select(response.commands.clone()).await?;
+            if let Some(action) = action {
+                println!("selected: {action:?}");
+                // todo 响应 action
             }
         }
     }
