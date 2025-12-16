@@ -53,7 +53,7 @@ fn is_known_shell(s: &str) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 /// 获取当前 shell 的字符串表示和可执行文件路径.

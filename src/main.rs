@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if prompt.is_empty() {
-        CommandSelectApp::select(["nihao", "wohao", "dajiahao"].into()).await?;
+        todo!("实现交互功能")
     } else {
         let prompt: String = prompt.join(" ");
         let (shell_name, _shell_path) = detect_shell();

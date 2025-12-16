@@ -98,7 +98,7 @@ pub struct ShellCommandGenAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
-    pub commands: Vec<String>, // todo 改成多个输出
+    pub commands: Vec<String>,
 }
 
 #[bon::bon]
@@ -294,12 +294,12 @@ impl ShellCommandGenAgent {
         })
     }
 
-    /// todo 根据修改建议 `prompt` 修改 agent 的上一个输出.
+    /// 根据修改建议 `prompt` 修改 agent 的上一个输出.
     pub async fn modify(
         &self,
         _prev_resp: ShellCommandGenAgentResponse,
         _prompt: String,
     ) -> Result<ShellCommandGenAgentResponse> {
-        todo!()
+        todo!("实现修改功能")
     }
 }
