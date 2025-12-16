@@ -79,13 +79,15 @@ ENSURE you have check every helping tools before you giving up (no valid solutio
 
 ## Finish
 
+If you think user prompts are already valid commands, then call {FINISH_RESPONSE} tool with the commands.
+
 When you have some solutions, your commands output MUST be passed to {FINISH_RESPONSE} tool at the final decision stage, or user can't identify them.
 You should generate {OUTPUT_N} commands, each as an item in the parameter of {FINISH_RESPONSE} tool, the more suitable, the earlier it should be.
 Ensure the commands are valid commands, without any markdown style!
 DO NOT quote arguments using ``, '', "" or anything else.
 The arguments supplied to the {FINISH_RESPONSE} tool must consist only of a single, syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions and newline characters like `\n` are strictly PROHIBITED within the command string.
 
-If you cannot come up with any solution or have similar commands but not quite fit the request, or your output is not pure commands, DO NOT call the {FINISH_RESPONSE} tool.
+If you cannot come up with any solution or your output is not pure commands, DO NOT call the {FINISH_RESPONSE} tool.
 Instead, provide your description in plain text output (not in the {FINISH_RESPONSE} tool).
 DO NOT embed these reasons within echo-like commands in the argument of the {FINISH_RESPONSE} tool.
 
