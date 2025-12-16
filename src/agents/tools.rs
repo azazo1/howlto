@@ -5,6 +5,14 @@ use serde_json::json;
 use tokio::io::{self, AsyncReadExt};
 use tracing::debug;
 
+fn default_start_line() -> usize {
+    0
+}
+
+fn default_read_lines() -> usize {
+    50
+}
+
 /// 获取 --help 内容
 pub struct Help;
 
@@ -15,11 +23,14 @@ pub struct HelpArgs {
     /// 子命令, 比如 `git add --help` 中的 `add` 就是一个子命令, 可以添加多层的子命令,
     /// 形成类似 `program a b c --help` 的效果.
     /// 此参数可以为空.
+    #[serde(default)]
     subcommands: Vec<String>,
     /// `--help` 中从指定行开始返回内容, 为 [`None`] 则默认为 0 行.
-    start_line: Option<usize>,
+    #[serde(default = "default_start_line")]
+    start_line: usize,
     /// `--help` 中读取指定行数, 为 [`None`] 则默认为 50 行.
-    read_lines: Option<usize>,
+    #[serde(default = "default_read_lines")]
+    read_lines: usize,
 }
 
 impl Tool for Help {
@@ -48,8 +59,8 @@ impl Tool for Help {
                         },
                         "description": r#"Subcommands of the program, \
                             e.g.: you should give `["a", "b", "c"]` to get the help of `program a b c`. \
-                            if no subcommand is needed, to get help of the program itself, you can pass []. \
-                            Your query should start with [], getting the help of program itself, and then call again for the specific subcommands. \
+                            if no subcommand is needed, to get help of the program itself, just skip this parameter. \
+                            Your query should start with [] or not given, getting the help of program itself, and then call again for the specific subcommands. \
                             When you feel you are on the wrong subcommand, you can pop a level and check other subcommands."#
                     },
                     "program": {
@@ -60,14 +71,15 @@ impl Tool for Help {
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, use different `start_line` to get different part of help content, default is 0.",
+                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value.",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
                     }
                 },
-                "required": ["program", "subcommands"],
+                "required": ["program"],
             }),
         }
     }
@@ -82,8 +94,8 @@ impl Tool for Help {
             .stderr(Stdio::piped());
         debug!(target: "tool-help", "Calling command {:?}...", command);
         let output = command.output().await?;
-        let start_line = args.start_line.unwrap_or(0);
-        let read_lines = args.read_lines.unwrap_or(50);
+        let start_line = args.start_line;
+        let read_lines = args.read_lines;
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
             start_line,
@@ -119,9 +131,11 @@ pub struct ManArgs {
     /// 要查询的 entry 名.
     entry: String,
     /// same as: [`HelpArgs::start_line`]
-    start_line: Option<usize>,
+    #[serde(default = "default_start_line")]
+    start_line: usize,
     /// same as: [`HelpArgs::read_lines`]
-    read_lines: Option<usize>,
+    #[serde(default = "default_read_lines")]
+    read_lines: usize,
 }
 
 impl Tool for Man {
@@ -163,11 +177,12 @@ impl Tool for Man {
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, use different `start_line` to get different part of man content, default is 0.",
+                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value.",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
                     },
                 },
                 "required": ["entry"],
@@ -225,8 +240,8 @@ impl Tool for Man {
         let mut stdout = String::new();
         child1.stderr.unwrap().read_to_string(&mut stderr).await?;
         child2.stdout.unwrap().read_to_string(&mut stdout).await?;
-        let start_line = args.start_line.unwrap_or(0);
-        let read_lines = args.read_lines.unwrap_or(50);
+        let start_line = args.start_line;
+        let read_lines = args.read_lines;
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
             start_line,
