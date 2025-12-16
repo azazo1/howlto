@@ -16,6 +16,8 @@ pub enum Error {
     ReqwestError(#[from] reqwest::Error),
     #[error("Streaming, {0}")]
     StreamingError(String),
+    #[error("{0}")]
+    InvalidInput(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,15 +1,14 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 use howlto::agent::shell_command_gen::ShellCommandGenAgent;
-use howlto::config::{AppConfig, CONFIG_TOML_FILE, PROFILES_TOML_FILE};
-use howlto::error::{Error, Result};
-use howlto::logging;
-use howlto::config::profile::Profiles;
+use howlto::config::AppConfigLoader;
+use howlto::config::DEFAULT_CONFIG_DIR;
 use howlto::config::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
-use howlto::config::{DEFAULT_CONFIG_DIR, profile::Profile};
-use tokio::{fs, io};
+use howlto::detect_shell;
+use howlto::error::Error;
+use howlto::logging;
+use howlto::tui::select::CommandSelectApp;
 
 const ABOUT: &str = "一个能帮你找到心仪命令的 CLI 工具.";
 
@@ -21,80 +20,13 @@ struct AppArgs {
     prompt: Vec<String>,
     #[clap(short, long, help = "配置文件所在的目录", default_value = DEFAULT_CONFIG_DIR)]
     config: PathBuf,
-}
-
-struct AppConfigLoader {
-    config_dir: PathBuf,
-}
-
-impl AppConfigLoader {
-    async fn new(config_dir: impl AsRef<Path>) -> Result<Self> {
-        // 创建配置文件目录, 并返回 expand 之后的路径.
-        let config_dir_str = config_dir.as_ref().to_str().ok_or(io::Error::new(
-            io::ErrorKind::InvalidFilename,
-            "无效的文件名",
-        ))?;
-        let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
-        fs::create_dir_all(&config_dir).await?;
-        Ok(Self { config_dir })
-    }
-
-    async fn load_or_create_config(&self) -> Result<AppConfig> {
-        let config_file_path = self.config_dir.join(CONFIG_TOML_FILE);
-        if !config_file_path.is_file() {
-            let config = AppConfig::default();
-            let content = toml::to_string_pretty(&config)?;
-            fs::write(config_file_path, content).await?;
-            Ok(config)
-        } else {
-            let config: AppConfig =
-                toml::from_str(&fs::read_to_string(self.config_dir.join(CONFIG_TOML_FILE)).await?)?;
-            Ok(config)
-        }
-    }
-
-    async fn create_default_profiles(&self) -> Result<Profiles> {
-        let default_profiles = Profiles::default();
-        let content = toml::to_string_pretty(&default_profiles)?;
-        fs::write(self.config_dir.join(PROFILES_TOML_FILE), content).await?;
-        Ok(default_profiles)
-    }
-
-    async fn load_or_create_profiles(&self) -> Result<HashMap<String, Profile>> {
-        let profile_path = self.config_dir.join(PROFILES_TOML_FILE);
-        let profiles: HashMap<String, Profile> = if !profile_path.is_file() {
-            self.create_default_profiles().await?
-        } else {
-            let content = fs::read_to_string(profile_path).await?;
-            toml::from_str(&content)?
-        }
-        .profiles
-        .into_iter()
-        .map(|x| (x.name.clone(), x))
-        .collect();
-        Ok(profiles)
-    }
-}
-
-/// 获取当前 shell 的字符串表示.
-fn detect_shell() -> String {
-    use sysinfo::{ProcessRefreshKind, RefreshKind, System, get_current_pid};
-    macro_rules! fall_back_to_unknown {
-        ($e:expr) => {{
-            let Some(x) = $e else {
-                return "Unknown".into();
-            };
-            x
-        }};
-    }
-    let pid = fall_back_to_unknown!(get_current_pid().ok());
-    let system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
-    );
-    let cur_proc = fall_back_to_unknown!(system.process(pid));
-    let parent_pid = fall_back_to_unknown!(cur_proc.parent());
-    let parent = fall_back_to_unknown!(system.process(parent_pid));
-    parent.name().to_string_lossy().into()
+    #[clap(
+        short,
+        long,
+        help = "直接输出所有候选命令, 无需交互输出.",
+        default_value_t = false
+    )]
+    plain: bool,
 }
 
 #[tokio::main]
@@ -102,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
     let AppArgs {
         prompt,
         config: config_dir,
+        plain,
     } = AppArgs::parse();
 
     let _guard = logging::init(&config_dir).await?;
@@ -116,26 +49,31 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if prompt.is_empty() {
-        todo!("interact mode")
+        CommandSelectApp::select(["nihao", "wohao", "dajiahao"].into()).await?;
     } else {
         let prompt: String = prompt.join(" ");
-        println!(
-            "{}",
-            ShellCommandGenAgent::builder()
-                .profile(
-                    profiles
-                        .get(SHELL_COMMAND_GEN_PROFILE)
-                        .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
-                        .clone(),
-                )
-                .os(std::env::consts::OS.to_string())
-                .shell(detect_shell())
-                .config(config)
-                .build()?
-                .resolve(prompt)
-                .await?
-                .command
-        );
+        let (shell_name, _shell_path) = detect_shell();
+        let response = ShellCommandGenAgent::builder()
+            .profile(
+                profiles
+                    .get(SHELL_COMMAND_GEN_PROFILE)
+                    .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
+                    .clone(),
+            )
+            .os(std::env::consts::OS.to_string())
+            .shell(shell_name)
+            .config(config)
+            .build()?
+            .resolve(prompt)
+            .await?;
+        if plain {
+            println!("{}", response.commands.join("\n"));
+        } else if !response.commands.is_empty() {
+            let selected = CommandSelectApp::select(response.commands.clone()).await?;
+            if let Some(selected) = selected {
+                println!("selected: {selected:?}");
+            }
+        }
     }
     Ok(())
 }

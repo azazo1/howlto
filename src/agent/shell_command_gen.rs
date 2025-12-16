@@ -98,7 +98,7 @@ pub struct ShellCommandGenAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
-    pub command: String,
+    pub commands: Vec<String>, // todo 改成多个输出
 }
 
 #[bon::bon]
@@ -110,6 +110,11 @@ impl ShellCommandGenAgent {
 }
 
 impl ShellCommandGenAgent {
+    #[tracing::instrument(
+        name = "ShellCommandGenAgent::new",
+        level = "info",
+        skip(profile, config)
+    )]
     pub fn new(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
         // 添加 Content-Type: application/json 请求头.
         let http_client = reqwest::Client::builder()
@@ -164,6 +169,8 @@ impl ShellCommandGenAgent {
             builder = builder.tool(Tldr);
         }
         builder = builder.tool(FinishResponse);
+
+        info!("Created.");
         Ok(Self {
             os,
             shell,
@@ -266,14 +273,14 @@ impl ShellCommandGenAgent {
         drop(_pb_span_enter);
 
         // 暂时只支持使用第一个回应, todo 支持多个回应的交互式选择.
-        let finish = finish.results.first().cloned().unwrap_or("".into());
+        let finish = finish.results;
         if finish.is_empty() {
             warn!("No command provided.");
             info!("Shell Command Gen Agent: {}", output.response());
         } else {
             // eprintln!(); // 为了分开结果输出和 tracing 输出, 视觉上更好分辨. // 这个调用之后会导致进度条无法正常关闭.
         }
-        let output = format!("{}\n{}", output.response(), finish);
+        let output = format!("{}\n{}", output.response(), finish.join("\n"));
         Ok(ShellCommandGenAgentResponse {
             messages: [
                 prompt.into(),
@@ -283,11 +290,11 @@ impl ShellCommandGenAgent {
                 },
             ]
             .into(),
-            command: finish,
+            commands: finish,
         })
     }
 
-    /// 根据修改建议 `prompt` 修改 agent 的上一个输出.
+    /// todo 根据修改建议 `prompt` 修改 agent 的上一个输出.
     pub async fn modify(
         &self,
         _prev_resp: ShellCommandGenAgentResponse,

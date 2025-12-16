@@ -409,6 +409,7 @@ checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
  "bitflags",
  "crossterm_winapi",
+ "futures-core",
  "mio",
  "parking_lot",
  "rustix 0.38.44",
@@ -825,6 +826,7 @@ dependencies = [
  "axum",
  "bon",
  "clap",
+ "crossterm",
  "indicatif 0.18.3",
  "ratatui",
  "reqwest",
