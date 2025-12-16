@@ -23,10 +23,17 @@ struct AppArgs {
     #[clap(
         short,
         long,
-        help = "直接输出所有候选命令, 无需交互输出.",
+        help = "直接输出所有候选命令, 无需交互选择.",
         default_value_t = false
     )]
     plain: bool,
+    #[clap(
+        short,
+        long,
+        help = "不在标准错误流输出进度信息.",
+        default_value_t = false
+    )]
+    quiet: bool,
 }
 
 #[tokio::main]
@@ -35,9 +42,10 @@ async fn main() -> anyhow::Result<()> {
         prompt,
         config: config_dir,
         plain,
+        quiet,
     } = AppArgs::parse();
 
-    let _guard = logging::init(&config_dir).await?;
+    let _guard = logging::init(&config_dir, !quiet).await?;
 
     let config_loader = AppConfigLoader::new(config_dir).await?;
     let config = config_loader.load_or_create_config().await?;
@@ -51,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
     if prompt.is_empty() {
         todo!("实现交互功能")
     } else {
+        // todo 移动到专门的模块, 和 shell_command_gen.rs select.rs 结合起来.
         let prompt: String = prompt.join(" ");
         let (shell_name, _shell_path) = detect_shell();
         let response = ShellCommandGenAgent::builder()

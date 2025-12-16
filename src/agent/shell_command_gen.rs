@@ -210,7 +210,7 @@ impl ShellCommandGenAgent {
                 while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
                     let msg = scroll.scroll(7).await;
                     if !msg.is_empty() {
-                        pb_span.pb_set_message(&msg);
+                        pb_span.pb_set_message(&msg.replace("\n", " "));
                     }
                     tokio::time::sleep(Duration::from_millis(30)).await;
                 }

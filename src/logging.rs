@@ -35,7 +35,7 @@ fn stderr_filter(metadata: &Metadata) -> bool {
 }
 
 /// 初始化日志输出
-pub async fn init(config_dir: impl AsRef<Path>) -> Result<WorkerGuard, io::Error> {
+pub async fn init(config_dir: impl AsRef<Path>, stderr: bool) -> Result<WorkerGuard, io::Error> {
     let logs_dir = config_dir.as_ref().join("logs");
     if !logs_dir.is_dir() {
         fs::create_dir(&logs_dir).await?;
@@ -46,18 +46,22 @@ pub async fn init(config_dir: impl AsRef<Path>) -> Result<WorkerGuard, io::Error
         .with_writer(logging_appender)
         .with_ansi(false)
         .with_filter(filter_fn(file_filter));
-    let indicatif_layer = IndicatifLayer::new();
-    let stderr_layer = tracing_subscriber::fmt::layer()
-        .with_target(false)
-        .without_time()
-        .with_writer(indicatif_layer.get_stderr_writer())
-        .with_filter(filter_fn(stderr_filter));
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
-    tracing_subscriber::registry()
+    let subs = tracing_subscriber::registry()
         .with(file_layer)
-        .with(stderr_layer)
-        .with(indicatif_layer.with_filter(filter_fn(stderr_filter))) // 在进度条上不显示内容
-        .with(env_filter)
-        .init();
+        .with(env_filter);
+    if stderr {
+        let indicatif_layer = IndicatifLayer::new();
+        let stderr_layer = tracing_subscriber::fmt::layer()
+            .with_target(false)
+            .without_time()
+            .with_writer(indicatif_layer.get_stderr_writer())
+            .with_filter(filter_fn(stderr_filter));
+        subs.with(stderr_layer)
+            .with(indicatif_layer.with_filter(filter_fn(stderr_filter))) // 在进度条上不显示内容
+            .init();
+    } else {
+        subs.init();
+    }
     Ok(guard)
 }
