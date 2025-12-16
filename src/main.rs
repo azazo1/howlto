@@ -10,8 +10,8 @@ use howlto::config::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
 use howlto::detect_shell;
 use howlto::error::Error;
 use howlto::logging;
-use howlto::tui::select::ActionKind;
-use howlto::tui::select::CommandSelectApp;
+use howlto::tui::command_select::ActionKind;
+use howlto::tui::command_select::App;
 
 const ABOUT: &str = "一个能帮你找到心仪命令的 CLI 工具.";
 
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         if plain {
             println!("{}", response.commands.join("\n"));
         } else if !response.commands.is_empty() {
-            let action = CommandSelectApp::select(response.commands.clone()).await?;
+            let action = App::select(response.commands.clone()).await?;
             if let Some(action) = action {
                 match action.kind {
                     ActionKind::Copy => {

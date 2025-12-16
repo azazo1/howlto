@@ -1,14 +1,14 @@
 use std::io::{self, Stderr};
 
 use crate::error::{Error, Result};
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event as CtEvent, KeyCode, KeyModifiers};
 use ratatui::{
     Terminal, Viewport, crossterm,
     layout::{Constraint, Layout},
     prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, List, ListItem, ListState, Padding, StatefulWidget, Widget},
+    widgets::{Block, List, ListItem, ListState, Padding, StatefulWidget, Widget as RtWidget},
 };
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tokio_stream::StreamExt;
@@ -50,18 +50,18 @@ pub enum ActionKind {
     Print,
 }
 
-struct CommandSelectWidget {
+struct Widget {
     items: Vec<Item>,
     list_state: ListState,
 }
 
-pub struct CommandSelectApp {
+pub struct App {
     terminal: Terminal<CrosstermBackend<Stderr>>,
-    widget: CommandSelectWidget,
+    widget: Widget,
 }
 
 #[derive(Debug)]
-enum AppEvent {
+enum Event {
     Up,
     Down,
     Quit,
@@ -73,7 +73,7 @@ enum AppEvent {
     // todo 添加一个 tab 直接粘贴到下一个 shell 输入中, 可能需要 shell 集成脚本.
 }
 
-impl Drop for CommandSelectApp {
+impl Drop for App {
     fn drop(&mut self) {
         // ratatui::restore(); // ratatui::restore() 对 Inline 的恢复效果不好.
         self.terminal.clear().ok();
@@ -82,7 +82,7 @@ impl Drop for CommandSelectApp {
     }
 }
 
-impl Widget for &mut CommandSelectWidget {
+impl RtWidget for &mut Widget {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
@@ -126,8 +126,8 @@ impl Widget for &mut CommandSelectWidget {
     }
 }
 
-impl CommandSelectApp {
-    fn start_handling_events(&self, tx: UnboundedSender<AppEvent>) -> JoinHandle<()> {
+impl App {
+    fn start_handling_events(&self, tx: UnboundedSender<Event>) -> JoinHandle<()> {
         macro_rules! break_on_error {
             ($s:expr) => {
                 if $s.is_err() {
@@ -139,39 +139,39 @@ impl CommandSelectApp {
             let mut event_stream = crossterm::event::EventStream::new();
             loop {
                 match event_stream.next().await {
-                    Some(Ok(Event::Key(kevt))) => match kevt.code {
+                    Some(Ok(CtEvent::Key(kevt))) => match kevt.code {
                         KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(AppEvent::Up));
+                            break_on_error!(tx.send(Event::Up));
                         }
                         KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(AppEvent::Down));
+                            break_on_error!(tx.send(Event::Down));
                         }
                         KeyCode::Esc | KeyCode::Char('q') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::Quit));
+                            break_on_error!(tx.send(Event::Quit));
                         }
                         KeyCode::Char('c') if kevt.modifiers == KeyModifiers::CONTROL => {
-                            break_on_error!(tx.send(AppEvent::Quit));
+                            break_on_error!(tx.send(Event::Quit));
                         }
                         KeyCode::Char('c') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::C));
+                            break_on_error!(tx.send(Event::C));
                         }
                         KeyCode::Char('m') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::M));
+                            break_on_error!(tx.send(Event::M));
                         }
                         KeyCode::Char('e') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::E));
+                            break_on_error!(tx.send(Event::E));
                         }
                         KeyCode::Enter if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::Enter));
+                            break_on_error!(tx.send(Event::Enter));
                         }
                         _ => (),
                     },
                     Some(Err(e)) => {
-                        break_on_error!(tx.send(AppEvent::Error(e)));
+                        break_on_error!(tx.send(Event::Error(e)));
                     }
                     _ => {}
                 }
@@ -199,14 +199,14 @@ impl CommandSelectApp {
                 break Ok(None);
             };
             match evt {
-                AppEvent::Up => self.widget.list_state.select_previous(),
-                AppEvent::Down => self.widget.list_state.select_next(),
-                AppEvent::Quit => break Ok(None),
-                AppEvent::Enter => break Ok(self.action_result(ActionKind::Print)),
-                AppEvent::C => break Ok(self.action_result(ActionKind::Copy)),
-                AppEvent::M => break Ok(self.action_result(ActionKind::Modify)),
-                AppEvent::Error(e) => break Err(e),
-                AppEvent::E => break Ok(self.action_result(ActionKind::Execute)),
+                Event::Up => self.widget.list_state.select_previous(),
+                Event::Down => self.widget.list_state.select_next(),
+                Event::Quit => break Ok(None),
+                Event::Enter => break Ok(self.action_result(ActionKind::Print)),
+                Event::C => break Ok(self.action_result(ActionKind::Copy)),
+                Event::M => break Ok(self.action_result(ActionKind::Modify)),
+                Event::Error(e) => break Err(e),
+                Event::E => break Ok(self.action_result(ActionKind::Execute)),
             }
         };
         handle.abort();
@@ -215,8 +215,8 @@ impl CommandSelectApp {
     }
 }
 
-impl CommandSelectApp {
-    fn new(items: Vec<Item>) -> io::Result<CommandSelectApp> {
+impl App {
+    fn new(items: Vec<Item>) -> io::Result<App> {
         crossterm::terminal::enable_raw_mode()?;
         let backend: CrosstermBackend<Stderr> = CrosstermBackend::new(io::stderr());
         let terminal = Terminal::with_options(
@@ -227,9 +227,9 @@ impl CommandSelectApp {
         )?;
         let mut list_state = ListState::default();
         list_state.select_first();
-        Ok(CommandSelectApp {
+        Ok(App {
             terminal,
-            widget: CommandSelectWidget { items, list_state },
+            widget: Widget { items, list_state },
         })
     }
 
@@ -237,7 +237,7 @@ impl CommandSelectApp {
         if items.is_empty() {
             return Err(Error::InvalidInput("items can't be empty".into()));
         }
-        let app = CommandSelectApp::new(items.into_iter().map(Into::into).collect())?;
+        let app = App::new(items.into_iter().map(Into::into).collect())?;
         app.run().await
     }
 }
