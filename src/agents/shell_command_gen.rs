@@ -232,7 +232,7 @@ impl ShellCommandGenAgent {
                                 "Tool result: {}",
                                 format!("{:?}", text)
                                     .chars()
-                                    .take(100)
+                                    .take(300)
                                     .chain("...".chars())
                                     .collect::<String>()
                             );

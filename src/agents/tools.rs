@@ -75,19 +75,6 @@ impl Tool for Help {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        if let Some(invalid_arg) = args
-            .subcommands
-            .iter()
-            .find(|s| s.starts_with('-') || s.contains(char::is_whitespace))
-        {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "invalid argument: {}, subcommand should not start with \'-\' and should not contain whitespace",
-                    invalid_arg
-                ),
-            ))?
-        }
         let mut command = tokio::process::Command::new(args.program);
         command
             .args(args.subcommands)
@@ -97,17 +84,21 @@ impl Tool for Help {
             .stderr(Stdio::piped());
         debug!(target: "tool-help", "Calling command {:?}...", command);
         let output = command.output().await?;
+        let start_line = args.start_line.unwrap_or(0);
+        let read_lines = args.read_lines.unwrap_or(50);
         Ok(format!(
-            "stdout:\n{}\nstderr:\n{}",
+            "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
+            start_line,
+            read_lines + start_line - 1,
             String::from_utf8_lossy(&output.stdout)
                 .lines()
-                .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(50))
+                .skip(start_line)
+                .take(read_lines)
                 .collect::<String>(),
             String::from_utf8_lossy(&output.stderr)
                 .lines()
-                .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(50))
+                .skip(start_line)
+                .take(read_lines)
                 .collect::<String>()
         ))
     }
@@ -236,17 +227,21 @@ impl Tool for Man {
         let mut stdout = String::new();
         child1.stderr.unwrap().read_to_string(&mut stderr).await?;
         child2.stdout.unwrap().read_to_string(&mut stdout).await?;
+        let start_line = args.start_line.unwrap_or(0);
+        let read_lines = args.read_lines.unwrap_or(50);
         Ok(format!(
-            "stdout:\n{}\nstderr:\n{}",
+            "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
+            start_line,
+            read_lines + start_line - 1,
             stdout
                 .lines()
-                .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(50))
+                .skip(start_line)
+                .take(read_lines)
                 .collect::<String>(),
             stderr
                 .lines()
-                .skip(args.start_line.unwrap_or(0))
-                .take(args.read_lines.unwrap_or(50))
+                .skip(start_line)
+                .take(read_lines)
                 .collect::<String>()
         ))
     }
