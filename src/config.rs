@@ -54,8 +54,8 @@ pub struct ShellCommandGenConfig {
     #[serde(default = "default_output_n")]
     pub output_n: u32,
     /// Shell Command Gen 是否等待输出显示完毕,
-    #[serde(default = "default_wait_for_output")]
-    pub wait_for_output: bool,
+    #[serde(default = "default_wait_for_output_scrolling")]
+    pub wait_for_output_scrolling: bool,
 }
 
 impl Default for AppConfig {
@@ -82,7 +82,7 @@ impl Default for ShellCommandGenConfig {
     }
 }
 
-fn default_wait_for_output() -> bool {
+fn default_wait_for_output_scrolling() -> bool {
     true
 }
 

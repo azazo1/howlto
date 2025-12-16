@@ -143,7 +143,10 @@ impl ShellCommandGenAgent {
                         .map(|x| x.to_string())
                         .unwrap_or("[none]".into()),
                 )
-                .replace(template::OUTPUT_N, &config.agent.shell_command_gen.output_n.to_string()),
+                .replace(
+                    template::OUTPUT_N,
+                    &config.agent.shell_command_gen.output_n.to_string(),
+                ),
         );
         if let Some(max_tokens) = config.llm.max_tokens {
             builder = builder.max_tokens(max_tokens);
@@ -248,7 +251,12 @@ impl ShellCommandGenAgent {
             }
         }
         finished.store(true, Ordering::Relaxed);
-        if !self.config.agent.shell_command_gen.wait_for_output {
+        if !self
+            .config
+            .agent
+            .shell_command_gen
+            .wait_for_output_scrolling
+        {
             scrolling_handle.abort();
         }
         scrolling_handle.await.ok();
@@ -260,7 +268,7 @@ impl ShellCommandGenAgent {
             warn!("No command provided.");
             info!("Shell Command Gen Agent: {}", output.response());
         } else {
-            eprintln!(); // 为了分开结果输出和 tracing 输出, 视觉上更好分辨.
+            // eprintln!(); // 为了分开结果输出和 tracing 输出, 视觉上更好分辨. // 这个调用之后会导致进度条无法正常关闭.
         }
         let output = format!("{}\n{}", output.response(), finish);
         Ok(ShellCommandGenAgentResponse {
