@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agents::tools::{FinishResponse, FinishResponseArgs, Help, Man};
+use crate::config::profile::template;
+use crate::config::{AppConfig, profile::Profile};
 use crate::error::{Error, Result};
-use crate::profile::template;
-use crate::{config::AppConfig, profile::Profile};
 use indicatif::ProgressStyle;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};

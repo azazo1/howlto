@@ -6,9 +6,9 @@ use howlto::agents::shell_command_gen::ShellCommandGenAgent;
 use howlto::config::{AppConfig, CONFIG_TOML_FILE, PROFILES_TOML_FILE};
 use howlto::error::{Error, Result};
 use howlto::logging;
-use howlto::profile::Profiles;
-use howlto::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
-use howlto::{config::DEFAULT_CONFIG_DIR, profile::Profile};
+use howlto::config::profile::Profiles;
+use howlto::config::profile::profiles::SHELL_COMMAND_GEN_PROFILE;
+use howlto::config::{DEFAULT_CONFIG_DIR, profile::Profile};
 use tokio::{fs, io};
 
 const ABOUT: &str = "一个能帮你找到心仪命令的 CLI 工具.";
