@@ -24,6 +24,7 @@ pub struct Profile {
     /// profile 的名称.
     pub name: String,
 }
+// todo 使用 get 泛型的方式获取 profile, 每个 profile 可以有几个子 sys prompt, 用于在不同情况下使用.
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Profiles {

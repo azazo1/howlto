@@ -18,6 +18,10 @@ pub enum Error {
     StreamingError(String),
     #[error("{0}")]
     InvalidInput(String),
+    #[error("{0}")]
+    ClipboardError(String),
+    #[error(transparent)]
+    TokioJoinError(#[from] tokio::task::JoinError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

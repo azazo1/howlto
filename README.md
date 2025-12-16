@@ -51,3 +51,4 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 - [x] indicatif 实时显示模型输出在一行.
 - [ ] url 网页内容访问, 网页搜索.
 - [ ] 缓存功能.
+- [ ] 抵抗乱码输入流.

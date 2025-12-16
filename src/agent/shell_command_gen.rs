@@ -90,12 +90,8 @@ impl ScrolliingMessage {
     }
 }
 
-#[allow(dead_code)]
-pub struct ShellCommandGenAgent {
-    /// 代表操作系统的字符串.
-    os: String,
-    /// 代表 shell 的字符串.
-    shell: String,
+/// Shell Command Generate Agent
+pub struct ScgAgent {
     /// 配置系统提示词.
     profile: Profile,
     /// 配置.
@@ -103,7 +99,7 @@ pub struct ShellCommandGenAgent {
     agent: RigAgent<CompletionModel>,
 }
 
-pub struct ShellCommandGenAgentResponse {
+pub struct ScgAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
@@ -111,14 +107,14 @@ pub struct ShellCommandGenAgentResponse {
 }
 
 #[bon::bon]
-impl ShellCommandGenAgent {
+impl ScgAgent {
     #[builder]
     pub fn builder(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
         Self::new(os, shell, profile, config)
     }
 }
 
-impl ShellCommandGenAgent {
+impl ScgAgent {
     #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
     pub fn new(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
         // 添加 Content-Type: application/json 请求头.
@@ -177,8 +173,6 @@ impl ShellCommandGenAgent {
 
         info!("Created.");
         Ok(Self {
-            os,
-            shell,
             profile,
             config,
             agent: builder.build(),
@@ -186,7 +180,7 @@ impl ShellCommandGenAgent {
     }
 
     /// shell command gen agent 解决一个 `prompt`.
-    pub async fn resolve(&self, prompt: String) -> Result<ShellCommandGenAgentResponse> {
+    pub async fn resolve(&self, prompt: String) -> Result<ScgAgentResponse> {
         // stream_prompt 会自动处理工具的调用.
         let mut stream = self.agent.stream_prompt(&prompt).multi_turn(20).await;
         let mut output = FinalResponse::empty();
@@ -289,7 +283,7 @@ impl ShellCommandGenAgent {
             info!("ShellCommandGenAgent: {}", output.response());
         }
         let output = format!("{}\n{}", output.response(), finish.join("\n"));
-        Ok(ShellCommandGenAgentResponse {
+        Ok(ScgAgentResponse {
             messages: [
                 prompt.into(),
                 Message::Assistant {
@@ -303,11 +297,16 @@ impl ShellCommandGenAgent {
     }
 
     /// 根据修改建议 `prompt` 修改 agent 的上一个输出.
+    /// # Parameters
+    /// - `prev_resp`: 前一轮的 agent 回复.
+    /// - `command`: 要修改的命令.
+    /// - `prompt`: 用户的修改要求描述.
     pub async fn modify(
         &self,
-        _prev_resp: ShellCommandGenAgentResponse,
-        _prompt: String,
-    ) -> Result<ShellCommandGenAgentResponse> {
+        prev_resp: &mut ScgAgentResponse,
+        command: String,
+        prompt: String,
+    ) -> Result<()> {
         todo!("实现修改功能")
     }
 }

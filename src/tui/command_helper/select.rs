@@ -1,23 +1,22 @@
 use std::io::{self, Stderr};
 
 use crate::error::{Error, Result};
-use crossterm::event::{Event as CtEvent, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     Terminal, Viewport, crossterm,
     layout::{Constraint, Layout},
     prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, List, ListItem, ListState, Padding, StatefulWidget, Widget as RtWidget},
+    widgets::{Block, BorderType, List, ListItem, ListState, Padding, StatefulWidget, Widget},
 };
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
 const TITLE: &str = "Select Command";
 const TITLE_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
-const HINT_TITLE: &str =
-    "j/k: up/down | m: modify | c: copy | e: execute | enter: print | q/esc: quit";
-const HINT_TITLE_STYLE: Style = Style::new().fg(Color::Gray);
+const HINT: &str = "j/k: up/down | m: modify | c: copy | e: execute | enter: print | q/esc: quit";
+const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
 #[derive(Debug, Clone)]
@@ -50,18 +49,18 @@ pub enum ActionKind {
     Print,
 }
 
-struct Widget {
+struct AppWidget {
     items: Vec<Item>,
     list_state: ListState,
 }
 
 pub struct App {
     terminal: Terminal<CrosstermBackend<Stderr>>,
-    widget: Widget,
+    widget: AppWidget,
 }
 
 #[derive(Debug)]
-enum Event {
+enum AppEvent {
     Up,
     Down,
     Quit,
@@ -69,7 +68,7 @@ enum Event {
     C,
     M,
     E,
-    Error(io::Error),
+    Err(io::Error),
     // todo 添加一个 tab 直接粘贴到下一个 shell 输入中, 可能需要 shell 集成脚本.
 }
 
@@ -82,7 +81,7 @@ impl Drop for App {
     }
 }
 
-impl RtWidget for &mut Widget {
+impl Widget for &mut AppWidget {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
@@ -93,18 +92,19 @@ impl RtWidget for &mut Widget {
             .max_by_key(|x| x.command.len())
             .map(|x| x.command.len())
             .unwrap_or(0)
-            .max(HINT_TITLE.len() + 5);
-        let [list_area, _rest_area] =
+            .max(HINT.len() + 5);
+        let [block_area, _rest_area] =
             Layout::horizontal([Constraint::Length(width as u16), Constraint::Fill(1)]).areas(area);
         let block = Block::bordered()
             .padding(Padding::horizontal(1))
             .border_style(BORDER_STYLE)
-            .title_top(Line::from(TITLE).style(TITLE_STYLE).left_aligned())
-            .title_bottom(
-                Line::from(HINT_TITLE)
-                    .style(HINT_TITLE_STYLE)
-                    .right_aligned(),
-            );
+            .border_type(BorderType::Rounded)
+            .title_top("") // 添加一个空占位, 让 title 不至于在最左侧.
+            .title_top(Line::from(TITLE).style(TITLE_STYLE));
+        block.render(block_area, buf);
+        let [list_area, hint_area] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
+            .margin(1)
+            .areas(block_area);
         StatefulWidget::render(
             List::new(
                 self.items
@@ -116,18 +116,21 @@ impl RtWidget for &mut Widget {
                     })
                     .map(ListItem::from),
             )
-            .block(block)
             .highlight_symbol(">")
             .highlight_style(Style::new().fg(Color::LightCyan)),
             list_area,
             buf,
             &mut self.list_state,
         );
+        Line::from(HINT)
+            .right_aligned()
+            .style(HINT_STYLE)
+            .render(hint_area, buf);
     }
 }
 
 impl App {
-    fn start_handling_events(&self, tx: UnboundedSender<Event>) -> JoinHandle<()> {
+    fn start_handling_events(&self, tx: UnboundedSender<AppEvent>) -> JoinHandle<()> {
         macro_rules! break_on_error {
             ($s:expr) => {
                 if $s.is_err() {
@@ -137,41 +140,41 @@ impl App {
         }
         tokio::spawn(async move {
             let mut event_stream = crossterm::event::EventStream::new();
-            loop {
-                match event_stream.next().await {
-                    Some(Ok(CtEvent::Key(kevt))) => match kevt.code {
+            while let Some(evt) = event_stream.next().await {
+                match evt {
+                    Ok(Event::Key(kevt)) => match kevt.code {
                         KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(Event::Up));
+                            break_on_error!(tx.send(AppEvent::Up));
                         }
                         KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(Event::Down));
+                            break_on_error!(tx.send(AppEvent::Down));
                         }
                         KeyCode::Esc | KeyCode::Char('q') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(Event::Quit));
+                            break_on_error!(tx.send(AppEvent::Quit));
                         }
                         KeyCode::Char('c') if kevt.modifiers == KeyModifiers::CONTROL => {
-                            break_on_error!(tx.send(Event::Quit));
+                            break_on_error!(tx.send(AppEvent::Quit));
                         }
                         KeyCode::Char('c') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(Event::C));
+                            break_on_error!(tx.send(AppEvent::C));
                         }
                         KeyCode::Char('m') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(Event::M));
+                            break_on_error!(tx.send(AppEvent::M));
                         }
                         KeyCode::Char('e') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(Event::E));
+                            break_on_error!(tx.send(AppEvent::E));
                         }
                         KeyCode::Enter if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(Event::Enter));
+                            break_on_error!(tx.send(AppEvent::Enter));
                         }
                         _ => (),
                     },
-                    Some(Err(e)) => {
-                        break_on_error!(tx.send(Event::Error(e)));
+                    Err(e) => {
+                        break_on_error!(tx.send(AppEvent::Err(e)));
                     }
                     _ => {}
                 }
@@ -199,37 +202,36 @@ impl App {
                 break Ok(None);
             };
             match evt {
-                Event::Up => self.widget.list_state.select_previous(),
-                Event::Down => self.widget.list_state.select_next(),
-                Event::Quit => break Ok(None),
-                Event::Enter => break Ok(self.action_result(ActionKind::Print)),
-                Event::C => break Ok(self.action_result(ActionKind::Copy)),
-                Event::M => break Ok(self.action_result(ActionKind::Modify)),
-                Event::Error(e) => break Err(e),
-                Event::E => break Ok(self.action_result(ActionKind::Execute)),
+                AppEvent::Up => self.widget.list_state.select_previous(),
+                AppEvent::Down => self.widget.list_state.select_next(),
+                AppEvent::Quit => break Ok(None),
+                AppEvent::Enter => break Ok(self.action_result(ActionKind::Print)),
+                AppEvent::C => break Ok(self.action_result(ActionKind::Copy)),
+                AppEvent::M => break Ok(self.action_result(ActionKind::Modify)),
+                AppEvent::Err(e) => break Err(e),
+                AppEvent::E => break Ok(self.action_result(ActionKind::Execute)),
             }
         };
         handle.abort();
         handle.await.ok();
         Ok(rst?)
     }
-}
 
-impl App {
     fn new(items: Vec<Item>) -> io::Result<App> {
         crossterm::terminal::enable_raw_mode()?;
         let backend: CrosstermBackend<Stderr> = CrosstermBackend::new(io::stderr());
         let terminal = Terminal::with_options(
             backend,
             ratatui::TerminalOptions {
-                viewport: Viewport::Inline(2 + items.len() as u16),
+                viewport: Viewport::Inline(3 + items.len() as u16),
             },
         )?;
+        // todo 使用 tty 作为标准输入流, 然后 drop 的时候还原, 防止标准输入流的错误输入.
         let mut list_state = ListState::default();
         list_state.select_first();
         Ok(App {
             terminal,
-            widget: Widget { items, list_state },
+            widget: AppWidget { items, list_state },
         })
     }
 
