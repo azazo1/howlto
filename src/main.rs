@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::Parser;
 use howlto::config::AppConfigLoader;
+use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
 use howlto::detect_shell;
 use howlto::logging;
@@ -68,7 +69,10 @@ async fn main() -> anyhow::Result<()> {
 
     // 提前检查
     if config.llm.llm_base_url.is_empty() {
-        Err(anyhow::anyhow!("LLM base url is empty."))?
+        Err(anyhow::anyhow!(
+            "LLM Base Url 为空, 请检查配置信息是否填写正确: {:?}.",
+            config_dir.join(CONFIG_TOML_FILE)
+        ))?
     }
 
     if prompt.is_empty() {
