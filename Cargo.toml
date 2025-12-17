@@ -10,7 +10,7 @@ axum = {version = "0.8.7", optional = true}
 bon = "3.8.1"
 clap = {version = "4.5.53", features = ["derive"]}
 clipboard-rs = "0.3.1"
-crossterm = {version = "^0.28", features = ["event-stream"]}
+crossterm = { version = "^0.28", features = ["event-stream", "libc", "use-dev-tty"] }
 indicatif = {version = "^0.18", features = ["tokio"]}
 ratatui = "^0.29.0"
 reqwest = "0.12.25"
