@@ -23,6 +23,8 @@ const HINT2: &str = "e: execute | enter: print | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
+// todo 使用 unicode-width 判断输出命令的宽度.
+
 #[derive(Debug, Clone)]
 pub struct Item {
     pub command: String,
