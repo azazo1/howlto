@@ -36,9 +36,9 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 ## 🗺️ Route
 
 - [x] 简单调用, e.g: `howlto create a rust project?`.
-- [ ] 交互式选择, 修改, 直接执行或者复制输出的命令.
+- [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
 - [x] 自动读取命令的 `--help` / `man` / `tldr`.
-- [ ] 类似 `fuck` 一样自动修复上一个命令.
+- [ ] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容.
 - [ ] shell 集成, 自动补全, 自动获取上一个命令的输出 (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
