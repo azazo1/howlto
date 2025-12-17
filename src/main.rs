@@ -50,10 +50,6 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("无效的文件名: {config_dir:?}"))?;
     let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
 
-    let _guard = logging::init(&config_dir, !quiet)
-        .await
-        .with_context(|| format!("无法初始化日志: {config_dir:?}"))?;
-
     let config_loader = AppConfigLoader::new(&config_dir)
         .await
         .with_context(|| format!("无法创建配置目录: {config_dir:?}"))?;
@@ -65,6 +61,10 @@ async fn main() -> anyhow::Result<()> {
         .load_or_create_profiles()
         .await
         .with_context(|| format!("无法加载 Profiles: {config_dir:?}"))?;
+
+    let _guard = logging::init(&config_dir, !quiet)
+        .await
+        .with_context(|| format!("无法初始化日志: {config_dir:?}"))?;
 
     // 提前检查
     if config.llm.llm_base_url.is_empty() {
