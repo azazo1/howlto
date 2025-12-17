@@ -30,6 +30,7 @@ const SPINNER: [&str; 7] = [
     "\u{280b}", "\u{2819}", "\u{2838}", "\u{2834}", "\u{2826}", "\u{2807}", "",
 ];
 
+// todo 使用 unicode width 而不是字符数量作为宽度
 #[derive(Debug, Clone)]
 struct ScrolliingMessage {
     /// 滚动的窗口宽度.
@@ -62,7 +63,7 @@ impl ScrolliingMessage {
 
     async fn has_new_messages(&self) -> bool {
         let message = self.message.read().await;
-        !message.is_empty()
+        message.len() > *self.message_read_cursor.lock().await
     }
 
     /// 返回实际 pop 的字符数和对应字符串.
