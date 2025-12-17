@@ -5,7 +5,7 @@ use tokio::io;
 use tracing::info;
 
 use crate::{
-    agent::shell_command_gen::{ScgAgent, ScgAgentResponse},
+    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse},
     config::{AppConfig, profile::Profiles},
     error::{Error, Result},
     tui::command_helper::select::ActionKind,
@@ -74,7 +74,9 @@ async fn modify(
     let prompt = modify::App::prompt(command.clone()).await?;
     if let Some(prompt) = prompt {
         info!("Modify prompt: {}", prompt);
-        agent.modify(prev_resp, command, prompt).await?;
+        *prev_resp = agent
+            .resolve(prompt, Some(ModifyOption::new(prev_resp.clone(), command)))
+            .await?;
         Ok(true)
     } else {
         Ok(false)
@@ -108,7 +110,7 @@ async fn run_inner(
         .shell(shell_name.to_string())
         .config(config)
         .build()?;
-    let response = agent.resolve(prompt.to_string()).await?;
+    let response = agent.resolve(prompt.to_string(), None).await?;
     if plain {
         println!("{}", response.commands.join("\n"));
     } else if !response.commands.is_empty() {

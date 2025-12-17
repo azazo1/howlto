@@ -5,20 +5,24 @@ use std::time::Duration;
 
 use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
 use crate::config::AppConfig;
-use crate::config::profile::{ShellComamndGenProfile, template};
+use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
 use rig::client::CompletionClient;
-use rig::message::{AssistantContent, Message, ToolResultContent};
+use rig::message::{Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
-use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
+use rig::streaming::{
+    StreamedAssistantContent, StreamedUserContent, StreamingChat, StreamingPrompt,
+};
 use rig::tool::Tool;
 use tokio::sync::{Mutex, RwLock};
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_indicatif::style::ProgressStyle;
+
+const MULTI_TURN: usize = 20;
 
 /// 盲文 spinner, \u28xx, xx 为 00~ff, 按位顺序从右到左分别表示盲文点: 左上, 左中, 左下, 右上, 右中, 右下, 左底, 右底.
 /// 其中最后两个点如果w位都是 0 那么为六点盲文.
@@ -92,15 +96,31 @@ impl ScrolliingMessage {
 
 /// Shell Command Generate Agent
 pub struct ScgAgent {
+    profile: ShellComamndGenProfile,
     config: AppConfig,
     agent: RigAgent<CompletionModel>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ScgAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
     pub commands: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct ModifyOption {
+    /// 之前输出的上下文.
+    prev_resp: ScgAgentResponse,
+    /// 需要修改的命令
+    command: String,
+}
+
+impl ModifyOption {
+    pub fn new(prev_resp: ScgAgentResponse, command: String) -> Self {
+        Self { prev_resp, command }
+    }
 }
 
 #[bon::bon]
@@ -144,22 +164,13 @@ impl ScgAgent {
             .completion_model(&config.llm.model);
         let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(
             &profile
-                .generate
-                .replace(template::OS, &os)
-                .replace(template::SHELL, &shell)
-                .replace(template::TEXT_LANG, &config.agent.language)
-                .replace(
-                    template::MAX_TOKENS,
-                    &config
-                        .llm
-                        .max_tokens
-                        .map(|x| x.to_string())
-                        .unwrap_or("[none]".into()),
-                )
-                .replace(
-                    template::OUTPUT_N,
-                    &config.agent.shell_command_gen.output_n.to_string(),
-                ),
+                .generate()
+                .os(os)
+                .shell(shell)
+                .text_lang(&config.agent.language)
+                .maybe_max_tokens(config.llm.max_tokens)
+                .output_n(config.agent.shell_command_gen.output_n)
+                .finish(),
         );
         if let Some(max_tokens) = config.llm.max_tokens {
             builder = builder.max_tokens(max_tokens);
@@ -181,14 +192,46 @@ impl ScgAgent {
         info!("Created.");
         Ok(Self {
             config,
+            profile,
             agent: builder.build(),
         })
     }
 
-    /// shell command gen agent 解决一个 `prompt`.
-    pub async fn resolve(&self, prompt: String) -> Result<ScgAgentResponse> {
+    /// shell command gen agent 解决一个 `prompt`, 或修改命令.
+    pub async fn resolve(
+        &self,
+        prompt: String,
+        modify_option: Option<ModifyOption>,
+    ) -> Result<ScgAgentResponse> {
         // stream_prompt 会自动处理工具的调用.
-        let mut stream = self.agent.stream_prompt(&prompt).multi_turn(20).await;
+        let mut stream = if let Some(modify_option) = &modify_option {
+            self.agent
+                .stream_chat(
+                    &prompt,
+                    modify_option
+                        .prev_resp
+                        .messages
+                        .clone()
+                        .into_iter()
+                        .chain(
+                            [Message::user(
+                                self.profile
+                                    .modify()
+                                    .command(&modify_option.command)
+                                    .finish(),
+                            )]
+                            .into_iter(),
+                        )
+                        .collect(),
+                )
+                .multi_turn(MULTI_TURN)
+                .await
+        } else {
+            self.agent
+                .stream_prompt(&prompt)
+                .multi_turn(MULTI_TURN)
+                .await
+        };
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
         let scroll = ScrolliingMessage::new(40);
@@ -290,29 +333,17 @@ impl ScgAgent {
         }
         let output = format!("{}\n{}", output.response(), finish.join("\n"));
         Ok(ScgAgentResponse {
-            messages: [
-                prompt.into(),
-                Message::Assistant {
-                    id: None,
-                    content: rig::OneOrMany::one(AssistantContent::Text(output.into())),
-                },
-            ]
-            .into(),
+            messages: if let Some(modify_option) = modify_option {
+                modify_option
+                    .prev_resp
+                    .messages
+                    .into_iter()
+                    .chain([Message::user(prompt), Message::assistant(output)].into_iter())
+                    .collect()
+            } else {
+                [Message::user(prompt), Message::assistant(output)].into()
+            },
             commands: finish,
         })
-    }
-
-    /// 根据修改建议 `prompt` 修改 agent 的上一个输出.
-    /// # Parameters
-    /// - `prev_resp`: 前一轮的 agent 回复.
-    /// - `command`: 要修改的命令.
-    /// - `prompt`: 用户的修改要求描述.
-    pub async fn modify(
-        &self,
-        prev_resp: &mut ScgAgentResponse,
-        command: String,
-        prompt: String,
-    ) -> Result<()> {
-        todo!("实现修改功能")
     }
 }

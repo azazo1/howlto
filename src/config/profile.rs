@@ -1,15 +1,18 @@
+use std::fmt::Display;
+
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::tools::FinishResponse;
-use template::*;
 
-pub mod template {
-    pub const TEXT_LANG: &str = "{{text_lang}}";
-    pub const SHELL: &str = "{{shell}}";
-    pub const OS: &str = "{{os}}";
-    pub const MAX_TOKENS: &str = "{{max_tokens}}";
-    pub const OUTPUT_N: &str = "{{output_n}}";
+use template::*;
+mod template {
+    pub(super) const TEXT_LANG: &str = "{{text_lang}}";
+    pub(super) const SHELL: &str = "{{shell}}";
+    pub(super) const OS: &str = "{{os}}";
+    pub(super) const MAX_TOKENS: &str = "{{max_tokens}}";
+    pub(super) const OUTPUT_N: &str = "{{output_n}}";
+    pub(super) const COMMAND: &str = "{{command}}";
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
@@ -20,9 +23,58 @@ pub struct Profiles {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ShellComamndGenProfile {
     /// 系统提示词: 生成命令
-    pub generate: String,
+    generate: String,
     /// 系统提示词: 修改命令
-    pub modify: String,
+    modify: String,
+}
+
+#[bon::bon]
+impl ShellComamndGenProfile {
+    #[builder(finish_fn = finish)]
+    pub fn generate(
+        &self,
+        os: impl Display,
+        shell: impl Display,
+        text_lang: impl Display,
+        max_tokens: Option<u64>,
+        output_n: u32,
+    ) -> String {
+        self.generate_internal(os, shell, text_lang, max_tokens, output_n)
+    }
+
+    #[builder(finish_fn = finish)]
+    pub fn modify(&self, command: impl Display) -> String {
+        self.modify_internal(command)
+    }
+}
+
+impl ShellComamndGenProfile {
+    fn generate_internal(
+        &self,
+        os: impl Display,
+        shell: impl Display,
+        text_lang: impl Display,
+        max_tokens: Option<u64>,
+        output_n: u32,
+    ) -> String {
+        self.generate
+            .replace(SHELL, &shell.to_string())
+            .replace(OS, &os.to_string())
+            .replace(
+                MAX_TOKENS,
+                &if let Some(max_tokens) = max_tokens {
+                    max_tokens.to_string()
+                } else {
+                    "[none]".to_string()
+                },
+            )
+            .replace(OUTPUT_N, &output_n.to_string())
+            .replace(TEXT_LANG, &text_lang.to_string())
+    }
+
+    fn modify_internal(&self, command: impl Display) -> String {
+        self.modify.replace(COMMAND, &command.to_string())
+    }
 }
 
 impl Default for ShellComamndGenProfile {
@@ -33,7 +85,7 @@ impl Default for ShellComamndGenProfile {
                 r#"# Identity
 You are Shell Command Generator who always speak in language: {TEXT_LANG}.
 Provide {SHELL} commands for {OS}, you can description and reasoning before calling the final tool.
-Try not to exceeds user max_tokens: `{MAX_TOKENS}` (empty or [none] represents no limitation).
+Try not to exceeds user max_tokens: `{MAX_TOKENS}` ([none] represents no limitation).
 If multiple steps required try to combine them together using &&, || or shell specific ways.
 
 ## User Input
@@ -73,7 +125,13 @@ DO NOT call {FINISH_RESPONSE} twice. Once you call it, you should stop outputing
 ALWAYS response in Natural LANGUAGE: {TEXT_LANG}.
 "#
             ),
-            modify: format!(r#"todo: not implemented (say it to user)"#),
+            modify: format!(
+                r#"Now help me modify the command:
+```
+{COMMAND}
+```
+with my prompt below."#
+            ),
         }
     }
 }
