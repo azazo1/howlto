@@ -8,6 +8,14 @@
 
 <!-- todo 放置 demo 视频. -->
 
+## 安装
+
+```shell
+cargo install --git https://github.com/azazo1/howlto.git
+```
+
+或者查看 Releases 中的预编译可执行文件.
+
 ## 使用
 
 直接像普通的英语句子一样提问:
