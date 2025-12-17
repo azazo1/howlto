@@ -16,6 +16,14 @@ cargo install --git https://github.com/azazo1/howlto.git
 
 或者查看 Releases 中预编译的可执行文件.
 
+## 配置
+
+默认配置目录: `~/.config/howlto/config.toml` (Windows 下 `~` 为 `%USERPROFILE%`).
+
+先启动一次 `howlto` 创建配置文件 (可以忽略此次报错),
+修改配置文件中的 `llm_api_key` 和 `llm_base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
+然后就能正常使用了.
+
 ## 使用
 
 直接像普通的英语句子一样提问:
@@ -71,4 +79,6 @@ cargo --help | howlto cargo build with no default feature
 
 ## Issues
 
-只有 macOS Apple Silicon 被测试运行过, 其他平台上的使用如遇问题欢迎提出 issues :)
+只有 macOS Apple Silicon 被测试运行过, 其他平台上的使用如遇问题欢迎提出 issues.
+
+## Enjoy :)
