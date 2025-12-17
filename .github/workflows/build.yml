@@ -64,6 +64,12 @@ jobs:
     - name: Add target
       run: rustup target add ${{ matrix.target }}
 
+    - name: Cache Rust build
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "v0-rust"
+        shared-key: ${{ matrix.target }}
+
     - name: Install cargo-zigbuild
       if: matrix.os != 'windows-latest'
       run: pip install cargo-zigbuild
@@ -107,6 +113,8 @@ jobs:
     name: Create Pre-release
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
@@ -129,6 +137,8 @@ jobs:
         tag_name: ${{ steps.get_version.outputs.tag }}
         name: Pre-release ${{ steps.get_version.outputs.tag }}
         prerelease: true
+        make_latest: true
+        generate_release_notes: true
         body: |
           Automated pre-release build from commit ${{ github.sha }}
 
