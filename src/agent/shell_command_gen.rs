@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -16,11 +15,12 @@ use rig::streaming::{
     StreamedAssistantContent, StreamedUserContent, StreamingChat, StreamingPrompt,
 };
 use rig::tool::Tool;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_indicatif::style::ProgressStyle;
+use unicode_width::UnicodeWidthChar;
 
 const MULTI_TURN: usize = 20;
 
@@ -30,24 +30,21 @@ const SPINNER: [&str; 7] = [
     "\u{280b}", "\u{2819}", "\u{2838}", "\u{2834}", "\u{2826}", "\u{2807}", "",
 ];
 
-// todo 使用 unicode width 而不是字符数量作为宽度
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ScrolliingMessage {
     /// 滚动的窗口宽度.
     scroll_width: usize,
-    scroll_window: Arc<Mutex<VecDeque<char>>>,
-    message: Arc<RwLock<String>>,
+    message: RwLock<String>,
     /// 字节索引.
-    message_read_cursor: Arc<Mutex<usize>>,
+    message_read_cursor: RwLock<usize>,
 }
 
 impl ScrolliingMessage {
     fn new(scroll_width: usize) -> Self {
         Self {
             scroll_width,
-            scroll_window: Arc::new(Mutex::new(VecDeque::new())),
-            message: Arc::new(RwLock::new(String::new())),
-            message_read_cursor: Arc::new(Mutex::new(0)),
+            message: RwLock::new(String::new()),
+            message_read_cursor: RwLock::new(0),
         }
     }
 
@@ -63,35 +60,52 @@ impl ScrolliingMessage {
 
     async fn has_new_messages(&self) -> bool {
         let message = self.message.read().await;
-        message.len() > *self.message_read_cursor.lock().await
+        message.len() > *self.message_read_cursor.read().await
     }
 
-    /// 返回实际 pop 的字符数和对应字符串.
-    async fn pop(&self, chars: usize) -> (usize, String) {
-        let message = self.message.read().await;
-        let mut cursor = self.message_read_cursor.lock().await;
-        let idx = message[*cursor..]
+    fn window_at_first(s: &str, width: usize) -> &str {
+        let mut acc = 0;
+        if let Some((idx, ch)) = s
             .char_indices()
-            .nth(chars)
-            .map(|(idx, _)| idx)
-            .unwrap_or(message[*cursor..].len());
-        *cursor += idx;
-        let rst = message[..*cursor].to_string();
-        (rst.chars().count(), rst)
+            .map_while(|(idx, ch)| {
+                acc += ch.width_cjk().unwrap_or(0);
+                if acc <= width { Some((idx, ch)) } else { None }
+            })
+            .last()
+        {
+            &s[..idx + ch.len_utf8()]
+        } else {
+            ""
+        }
     }
 
-    /// - `step`: 滚动字符数
+    fn window_at_last(s: &str, width: usize) -> &str {
+        let mut acc = 0;
+        if let Some(idx) = s
+            .char_indices()
+            .rev()
+            .map_while(|(idx, ch)| {
+                acc += ch.width_cjk().unwrap_or(0);
+                if acc <= width { Some(idx) } else { None }
+            })
+            .last()
+        {
+            &s[idx..]
+        } else {
+            ""
+        }
+    }
+
+    /// - `step`: 滚动 unicode_width 数.
     async fn scroll(&self, step: usize) -> String {
-        let mut window = self.scroll_window.lock().await;
-        let (step, popen) = self.pop(step).await;
-        let dispose_len = (window.len() + step).saturating_sub(self.scroll_width);
-        *window = window
-            .iter()
-            .copied()
-            .chain(popen.chars())
-            .skip(dispose_len)
-            .collect();
-        window.iter().copied().collect()
+        let cursor = *self.message_read_cursor.read().await;
+        let message = self.message.read().await;
+        let appendant = Self::window_at_first(&message[cursor..], step);
+        #[cfg(test)]
+        eprintln!("appendant: {{{appendant}}}");
+        let window = Self::window_at_last(&message[..cursor + appendant.len()], self.scroll_width);
+        *self.message_read_cursor.write().await += appendant.len();
+        window.to_string()
     }
 }
 
@@ -235,7 +249,7 @@ impl ScgAgent {
         };
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
-        let scroll = ScrolliingMessage::new(40);
+        let scroll = Arc::new(ScrolliingMessage::new(40));
         let finished = Arc::new(AtomicBool::new(false));
         let pb_span = info_span!("Resolving");
         pb_span.pb_set_style(
@@ -248,7 +262,7 @@ impl ScgAgent {
         let scrolling_handle = {
             // 持续滚动进度条输出.
             let pb_span = pb_span.clone();
-            let scroll = scroll.clone();
+            let scroll = Arc::clone(&scroll);
             let finished = Arc::clone(&finished);
             tokio::spawn(async move {
                 while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
@@ -346,5 +360,31 @@ impl ScgAgent {
             },
             commands: finish,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use unicode_width::UnicodeWidthStr;
+
+    use crate::agent::shell_command_gen::ScrolliingMessage;
+
+    #[tokio::test]
+    async fn scroll_message() {
+        const SCROLL_WIDTH: usize = 10;
+        let sm = ScrolliingMessage::new(SCROLL_WIDTH);
+        sm.push("你好世界".into()).await;
+        assert_eq!(sm.scroll(0).await, "");
+        assert_eq!(sm.scroll(1).await, ""); // 没到字符边界, 没有产生任何效果.
+        assert_eq!(sm.scroll(2).await, "你");
+        assert_eq!(sm.scroll(6).await, "你好世界"); // 滚动到末尾.
+        sm.push("abc".into()).await;
+        assert_eq!("你好世界ab".width_cjk(), SCROLL_WIDTH);
+        let s = sm.scroll(2).await;
+        assert_eq!(s.width_cjk(), SCROLL_WIDTH);
+        assert_eq!(s, "你好世界ab");
+        sm.push("我能正常滚动".into()).await;
+        assert_eq!(sm.scroll(0).await, "你好世界ab");
+        assert_eq!(sm.scroll(usize::MAX).await, "能正常滚动");
     }
 }
