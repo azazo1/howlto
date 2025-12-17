@@ -55,7 +55,6 @@ async fn modify(
     prev_resp: &mut ScgAgentResponse,
     command: String,
 ) -> Result<bool> {
-    info!("Modify selected: {}", command);
     let prompt = modify::App::prompt(command.clone()).await?;
     if let Some(prompt) = prompt {
         info!("Modify prompt: {}", prompt);
@@ -117,6 +116,7 @@ async fn run_internal(
             let action = select::App::select(response.commands.clone()).await?;
             let mut should_exit = true;
             if let Some(action) = &action {
+                info!("Select action: {action:?}");
                 match action.kind {
                     ActionKind::Copy => copy(action.command.clone())?,
                     ActionKind::Execute => execute(action.command.clone(), shell_path).await?,
