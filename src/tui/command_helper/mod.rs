@@ -1,15 +1,12 @@
-use std::{collections::HashMap, path::Path, process::Stdio};
+use std::{path::Path, process::Stdio};
 
 use clipboard_rs::Clipboard;
 use tokio::io;
-use tracing::{info, instrument};
+use tracing::info;
 
 use crate::{
     agent::shell_command_gen::{ScgAgent, ScgAgentResponse},
-    config::{
-        AppConfig,
-        profile::{Profile, profiles::SHELL_COMMAND_GEN_PROFILE},
-    },
+    config::{AppConfig, profile::Profiles},
     error::{Error, Result},
     tui::command_helper::select::ActionKind,
 };
@@ -91,7 +88,7 @@ pub async fn run(
     config: AppConfig,
     shell_name: &str,
     shell_path: impl AsRef<Path>,
-    profiles: HashMap<String, Profile>,
+    profiles: Profiles,
 ) -> Result<()> {
     run_inner(prompt, plain, config, shell_name, shell_path, profiles).await
 }
@@ -102,16 +99,11 @@ async fn run_inner(
     config: AppConfig,
     shell_name: &str,
     shell_path: impl AsRef<Path>,
-    profiles: HashMap<String, Profile>,
+    profiles: Profiles,
 ) -> Result<()> {
     let shell_path = shell_path.as_ref();
     let agent = ScgAgent::builder()
-        .profile(
-            profiles
-                .get(SHELL_COMMAND_GEN_PROFILE)
-                .ok_or(Error::profile_not_found(SHELL_COMMAND_GEN_PROFILE))?
-                .clone(),
-        )
+        .profile(profiles.shell_command_gen.clone())
         .os(std::env::consts::OS.to_string())
         .shell(shell_name.to_string())
         .config(config)

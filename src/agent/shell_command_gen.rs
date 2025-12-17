@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
-use crate::config::profile::template;
-use crate::config::{AppConfig, profile::Profile};
+use crate::config::AppConfig;
+use crate::config::profile::{ShellComamndGenProfile, template};
 use crate::error::{Error, Result};
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
@@ -92,9 +92,6 @@ impl ScrolliingMessage {
 
 /// Shell Command Generate Agent
 pub struct ScgAgent {
-    /// 配置系统提示词.
-    profile: Profile,
-    /// 配置.
     config: AppConfig,
     agent: RigAgent<CompletionModel>,
 }
@@ -109,14 +106,24 @@ pub struct ScgAgentResponse {
 #[bon::bon]
 impl ScgAgent {
     #[builder]
-    pub fn builder(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
+    pub fn builder(
+        os: String,
+        shell: String,
+        profile: ShellComamndGenProfile,
+        config: AppConfig,
+    ) -> Result<Self> {
         Self::new(os, shell, profile, config)
     }
 }
 
 impl ScgAgent {
     #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
-    pub fn new(os: String, shell: String, profile: Profile, config: AppConfig) -> Result<Self> {
+    pub fn new(
+        os: String,
+        shell: String,
+        profile: ShellComamndGenProfile,
+        config: AppConfig,
+    ) -> Result<Self> {
         // 添加 Content-Type: application/json 请求头.
         let http_client = reqwest::Client::builder()
             .default_headers({
@@ -137,7 +144,7 @@ impl ScgAgent {
             .completion_model(&config.llm.model);
         let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(
             &profile
-                .role
+                .generate
                 .replace(template::OS, &os)
                 .replace(template::SHELL, &shell)
                 .replace(template::TEXT_LANG, &config.agent.language)
@@ -173,7 +180,6 @@ impl ScgAgent {
 
         info!("Created.");
         Ok(Self {
-            profile,
             config,
             agent: builder.build(),
         })

@@ -2,7 +2,6 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::tools::FinishResponse;
-use profiles::*;
 use template::*;
 
 pub mod template {
@@ -13,54 +12,29 @@ pub mod template {
     pub const OUTPUT_N: &str = "{{output_n}}";
 }
 
-pub mod profiles {
-    pub const SHELL_COMMAND_GEN_PROFILE: &str = "shell-command-gen";
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Profile {
-    /// LLM 的自我认知系统提示词, 用于实现不同的功能.
-    pub role: String,
-    /// profile 的名称.
-    pub name: String,
-}
-// todo 使用 get 泛型的方式获取 profile, 每个 profile 可以有几个子 sys prompt, 用于在不同情况下使用.
-
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Profiles {
-    #[serde(rename = "profile")] // 形成 [[profile]] 的样子.
-    pub profiles: Vec<Profile>,
+    pub shell_command_gen: ShellComamndGenProfile,
 }
 
-impl Default for Profiles {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ShellComamndGenProfile {
+    /// 系统提示词: 生成命令
+    pub generate: String,
+    /// 系统提示词: 修改命令
+    pub modify: String,
+}
+
+impl Default for ShellComamndGenProfile {
     fn default() -> Self {
-        Self {
-            profiles: Profile::defaults(),
-        }
-    }
-}
-
-impl Profiles {
-    pub fn new(profiles: Vec<Profile>) -> Self {
-        Self { profiles }
-    }
-}
-
-impl Profile {
-    pub fn new(role: String, name: String) -> Self {
-        Self { role, name }
-    }
-
-    #[allow(dead_code)]
-    pub fn defaults() -> Vec<Self> {
         const FINISH_RESPONSE: &str = FinishResponse::NAME;
-        // 这里有可能用户禁用了 tldr / man / help 工具, 因此最好不要主动提及这些工具, 避免幻觉.
-        [Self::new(
-            format!(r#"# Identity
+        Self {
+            generate: format!(
+                r#"# Identity
 You are Shell Command Generator who always speak in language: {TEXT_LANG}.
 Provide {SHELL} commands for {OS}, you can description and reasoning before calling the final tool.
 Try not to exceeds user max_tokens: `{MAX_TOKENS}` (empty or [none] represents no limitation).
-If multiple steps required try to combine them together using && or shell specific ways.
+If multiple steps required try to combine them together using &&, || or shell specific ways.
 
 ## User Input
 
@@ -97,9 +71,9 @@ DO NOT call {FINISH_RESPONSE} twice. Once you call it, you should stop outputing
 ## Text Language
 
 ALWAYS response in Natural LANGUAGE: {TEXT_LANG}.
-"#),
-            SHELL_COMMAND_GEN_PROFILE.into(),
-        )]
-        .into()
+"#
+            ),
+            modify: format!(r#"todo: not implemented (say it to user)"#),
+        }
     }
 }

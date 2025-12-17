@@ -1,16 +1,13 @@
 use std::{
-    collections::HashMap,
     io,
     path::{Path, PathBuf},
 };
 
-use crate::{config::profile::Profile, error::Result};
+use crate::{config::profile::Profiles, error::Result};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 pub mod profile;
-
-use profile::Profiles;
 
 pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
 pub const PROFILES_TOML_FILE: &str = "profiles.toml";
@@ -166,18 +163,14 @@ impl AppConfigLoader {
         Ok(default_profiles)
     }
 
-    pub async fn load_or_create_profiles(&self) -> Result<HashMap<String, Profile>> {
+    pub async fn load_or_create_profiles(&self) -> Result<Profiles> {
         let profile_path = self.config_dir.join(PROFILES_TOML_FILE);
-        let profiles: HashMap<String, Profile> = if !profile_path.is_file() {
+        let profiles: Profiles = if !profile_path.is_file() {
             self.create_default_profiles().await?
         } else {
             let content = fs::read_to_string(profile_path).await?;
             toml::from_str(&content)?
-        }
-        .profiles
-        .into_iter()
-        .map(|x| (x.name.clone(), x))
-        .collect();
+        };
         Ok(profiles)
     }
 }
