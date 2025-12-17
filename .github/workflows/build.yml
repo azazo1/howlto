@@ -103,11 +103,27 @@ jobs:
       if: matrix.os == 'windows-latest' && matrix.target != 'aarch64-pc-windows-msvc'
       run: cargo build --release --target ${{ matrix.target }}
 
+    - name: Package Assets
+      id: package_step
+      shell: bash
+      run: |
+        STAGING="${{ matrix.asset_name }}"
+        mkdir -p "$STAGING"
+        cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "$STAGING/"
+
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          7z a "$STAGING.zip" "$STAGING"
+          echo "asset_path=$STAGING.zip" >> $GITHUB_OUTPUT
+        else
+          tar -czf "$STAGING.tar.gz" "$STAGING"
+          echo "asset_path=$STAGING.tar.gz" >> $GITHUB_OUTPUT
+        fi
+
     - name: Upload binary as artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        path: ${{ steps.package_step.outputs.final_path }}
 
   create-prerelease:
     name: Create Pre-release
@@ -145,13 +161,6 @@ jobs:
           Version: ${{ steps.get_version.outputs.version }}
           Build: ${{ github.run_number }}
         files: |
-          artifacts/howlto-linux-x86_64-gnu/howlto
-          artifacts/howlto-linux-x86_64-musl/howlto
-          artifacts/howlto-linux-aarch64-gnu/howlto
-          artifacts/howlto-linux-aarch64-musl/howlto
-          artifacts/howlto-macos-x86_64/howlto
-          artifacts/howlto-macos-arm64/howlto
-          artifacts/howlto-windows-x86_64/howlto.exe
-          artifacts/howlto-windows-arm64/howlto.exe
+          artifacts/**/*.*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
