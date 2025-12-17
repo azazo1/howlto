@@ -54,7 +54,7 @@ cargo --help | howlto cargo build with no default feature
 - [x] 自动读取命令的 `--help` / `man` / `tldr`.
 - [ ] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
-- [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容.
+- [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] shell 集成, 自动补全, 自动获取上一个命令的输出 (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [x] 一次请求生成多个结果.
@@ -67,6 +67,7 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 缓存功能.
 - [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.
 - [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
+- [ ] 自动识别提示词, 对应使用不同的 agent 和 profile: chat / command / explain.
 
 ## Issues
 
