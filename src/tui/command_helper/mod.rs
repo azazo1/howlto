@@ -22,12 +22,8 @@ async fn execute(command: String, shell_path: impl AsRef<Path>) -> Result<()> {
         .arg(command)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null()) // 本来想着把标准输入流传进去, 但是这样就和 agent 从标准输入中附加内容冲突了.
         .spawn()?;
-    let mut child_stdin = child.stdin.take().ok_or(io::Error::new(
-        io::ErrorKind::BrokenPipe,
-        "cannot take child stdin",
-    ))?;
     let mut child_stdout = child.stdout.take().ok_or(io::Error::new(
         io::ErrorKind::BrokenPipe,
         "cannot take child stdout",
@@ -36,23 +32,9 @@ async fn execute(command: String, shell_path: impl AsRef<Path>) -> Result<()> {
         io::ErrorKind::BrokenPipe,
         "cannot take child stderr",
     ))?;
-    let stdin_handle =
-        tokio::spawn(
-            async move { tokio::io::copy(&mut tokio::io::stdin(), &mut child_stdin).await },
-        );
-    let stdout_handle =
-        tokio::spawn(
-            async move { tokio::io::copy(&mut child_stdout, &mut tokio::io::stdout()).await },
-        );
-    let stderr_handle =
-        tokio::spawn(
-            async move { tokio::io::copy(&mut child_stderr, &mut tokio::io::stderr()).await },
-        );
-    let (rout, rerr) = tokio::try_join!(stdout_handle, stderr_handle)?;
-    rout?;
-    rerr?;
-    stdin_handle.abort();
-    stdin_handle.await.ok();
+    tokio::spawn(async move { tokio::io::copy(&mut child_stdout, &mut tokio::io::stdout()).await });
+    tokio::spawn(async move { tokio::io::copy(&mut child_stderr, &mut tokio::io::stderr()).await });
+    child.wait().await?;
     Ok(())
 }
 
