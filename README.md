@@ -39,7 +39,7 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 ```
 
 > [!WARNING]
-> 这个命令会直接执行模型输出的命令, 务必谨慎小心.
+> 这个命令会直接执行模型输出的结果, 务必谨慎小心.
 
 如果你想手动附加某些帮助信息作为辅助:
 
