@@ -50,11 +50,11 @@ jobs:
             artifact_name: howlto
             asset_name: howlto-macos-arm64
           - os: windows-latest
-            target: x86_64-pc-windows-gnullvm
+            target: x86_64-pc-windows-gnu
             artifact_name: howlto.exe
             asset_name: howlto-windows-x86_64
           - os: windows-latest
-            target: aarch64-pc-windows-gnullvm
+            target: aarch64-pc-windows-msvc
             artifact_name: howlto.exe
             asset_name: howlto-windows-arm64
 
@@ -79,18 +79,23 @@ jobs:
       run: cargo zigbuild --release --target ${{ matrix.target }}
 
     - name: Setup Clang
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' && matrix.target == 'aarch64-pc-windows-msvc'
       uses: egor-tensin/setup-clang@v1
       with:
         version: latest
         platform: x64
+
     - name: Install XWin
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' && matrix.target == 'aarch64-pc-windows-msvc'
       run: pip install cargo-xwin
 
     - name: Build release binary
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' && matrix.target == 'aarch64-pc-windows-msvc'
       run: cargo xwin build --release --target ${{ matrix.target }}
+
+    - name: Build release binary
+      if: matrix.os == 'windows-latest' && matrix.target != 'aarch64-pc-windows-msvc'
+      run: cargo build --release --target ${{ matrix.target }}
 
     - name: Upload binary as artifact
       uses: actions/upload-artifact@v4
