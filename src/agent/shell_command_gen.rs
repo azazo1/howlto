@@ -210,6 +210,7 @@ impl ScgAgent {
         })
     }
 
+    // todo 当 ai 没有调用 final_response 工具的时候, 给个简单的 prompt, 提醒 ai 调用.
     /// shell command gen agent 解决一个 `prompt`, 或修改命令.
     async fn resolve_internal(
         &self,
