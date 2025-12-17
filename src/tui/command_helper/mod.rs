@@ -126,6 +126,7 @@ async fn run_inner(
                     ActionKind::Modify => {
                         should_exit =
                             !modify(&agent, &mut response, action.command.clone()).await?;
+                        should_exit |= response.commands.is_empty();
                     }
                 }
             }
