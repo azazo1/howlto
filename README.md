@@ -42,7 +42,7 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容.
 - [ ] shell 集成, 自动补全, 自动获取上一个命令的输出 (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
-- [ ] 生成 completions 脚本.
+- [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [x] 一次请求生成多个结果.
 - [x] 使用 ratatui 显示 tui 界面(嵌入在原来的 shell 之中, 非新开一个屏幕), 在交互结束之后回到原来的光标位置.
 - [ ] 显示 markdown 内容.
