@@ -10,6 +10,8 @@ jobs:
   build-and-release:
     name: Build and Release
     uses: azazo1/rust-workflows/.github/workflows/build-and-release.yml@main
+    permissions:
+      contents: write
     with:
       create_prerelease: true
       dry_run: false
