@@ -1,5 +1,4 @@
 use std::io;
-use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Context;
