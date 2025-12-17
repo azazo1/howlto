@@ -2,7 +2,7 @@
 
 一个命令行工具, 帮你快速找到想要使用的命令.
 
-很快🚀, 超级便宜🤩, 而且对模型要求非常低🗿, 仅仅靠 `gpt-4o-mini` 就能驱动.
+Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini`.
 
 ## Demo
 
