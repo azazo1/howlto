@@ -6,7 +6,7 @@ Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini`.
 
 ## Demo
 
-<!-- todo 放置 demo 视频. -->
+<video src="assets/demo.mp4" title="Demo" autoplay muted loop></video>
 
 ## 安装
 
