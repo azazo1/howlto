@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Parser;
 use howlto::config::AppConfigLoader;
 use howlto::config::DEFAULT_CONFIG_DIR;
@@ -40,11 +41,21 @@ async fn main() -> anyhow::Result<()> {
         quiet,
     } = AppArgs::parse();
 
-    let _guard = logging::init(&config_dir, !quiet).await?;
+    let _guard = logging::init(&config_dir, !quiet)
+        .await
+        .with_context(|| format!("无法初始化日志: {config_dir:?}"))?;
 
-    let config_loader = AppConfigLoader::new(config_dir).await?;
-    let config = config_loader.load_or_create_config().await?;
-    let profiles = config_loader.load_or_create_profiles().await?;
+    let config_loader = AppConfigLoader::new(&config_dir)
+        .await
+        .with_context(|| format!("无效的配置文件名: {config_dir:?}"))?;
+    let config = config_loader
+        .load_or_create_config()
+        .await
+        .with_context(|| format!("无法加载配置: {config_dir:?}"))?;
+    let profiles = config_loader
+        .load_or_create_profiles()
+        .await
+        .with_context(|| format!("无法加载 Profiles: {config_dir:?}"))?;
 
     // 提前检查
     if config.llm.llm_base_url.is_empty() {

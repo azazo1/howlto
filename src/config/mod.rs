@@ -135,7 +135,7 @@ impl AppConfigLoader {
         // 创建配置文件目录, 并返回 expand 之后的路径.
         let config_dir_str = config_dir.as_ref().to_str().ok_or(io::Error::new(
             io::ErrorKind::InvalidFilename,
-            "无效的文件名",
+            "Invalid filename",
         ))?;
         let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
         fs::create_dir_all(&config_dir).await?;
