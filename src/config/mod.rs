@@ -92,7 +92,7 @@ impl Default for ShellCommandGenConfig {
 }
 
 fn default_wait_for_output_scrolling() -> bool {
-    true
+    false
 }
 
 fn default_output_n() -> u32 {
