@@ -57,6 +57,7 @@ async fn execute(command: String, shell_path: impl AsRef<Path>) -> Result<()> {
 }
 
 fn copy(text: String) -> Result<()> {
+    // 目前无法使用 crossterm 0.29 的 clipboard 功能, 因为 ratatui 的依赖冲突, 我不想再添加一个 crossterm 依赖.
     let cx = clipboard_rs::ClipboardContext::new()
         .map_err(|_| Error::ClipboardError("Failed to access clipboard.".into()))?;
     cx.set_text(text)
