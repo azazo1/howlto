@@ -78,7 +78,10 @@ async fn modify(
     if let Some(prompt) = prompt {
         info!("Modify prompt: {}", prompt);
         *prev_resp = agent
-            .resolve(prompt, Some(ModifyOption::new(prev_resp.clone(), command)))
+            .resolve()
+            .prompt(prompt)
+            .modify_option(ModifyOption::new(prev_resp.messages.clone(), command))
+            .call()
             .await?;
         Ok(true)
     } else {
@@ -93,17 +96,22 @@ pub async fn run(
     config: AppConfig,
     shell_name: &str,
     shell_path: impl AsRef<Path>,
+    attached: Option<String>,
     profiles: Profiles,
 ) -> Result<()> {
-    run_inner(prompt, plain, config, shell_name, shell_path, profiles).await
+    run_internal(
+        prompt, plain, config, shell_name, shell_path, attached, profiles,
+    )
+    .await
 }
 
-async fn run_inner(
+async fn run_internal(
     prompt: &str,
     plain: bool,
     config: AppConfig,
     shell_name: &str,
     shell_path: impl AsRef<Path>,
+    attached: Option<String>,
     profiles: Profiles,
 ) -> Result<()> {
     let shell_path = shell_path.as_ref();
@@ -113,7 +121,12 @@ async fn run_inner(
         .shell(shell_name.to_string())
         .config(config)
         .build()?;
-    let response = agent.resolve(prompt.to_string(), None).await?;
+    let response = agent
+        .resolve()
+        .prompt(prompt.to_string())
+        .maybe_attached(attached)
+        .call()
+        .await?;
     if plain {
         println!("{}", response.commands.join("\n"));
     } else if !response.commands.is_empty() {

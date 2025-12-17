@@ -1,14 +1,17 @@
 use std::io;
+use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
+use crossterm::tty::IsTty;
 use howlto::config::AppConfigLoader;
 use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
 use howlto::detect_shell;
 use howlto::logging;
 use howlto::tui;
+use tokio::io::AsyncReadExt;
 
 #[derive(clap::Parser)]
 #[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version, author)]
@@ -80,6 +83,16 @@ async fn main() -> anyhow::Result<()> {
     } else {
         let prompt: String = prompt.join(" ");
         let (shell_name, shell_path) = detect_shell();
+        // attach stdin
+        let mut stdin = tokio::io::stdin();
+        let attached = if !stdin.is_tty() {
+            let mut s = String::new();
+            stdin.read_to_string(&mut s).await?;
+            Some(s)
+        } else {
+            None
+        };
+
         tui::command_helper::run()
             .config(config)
             .prompt(&prompt)
@@ -87,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
             .shell_path(shell_path)
             .profiles(profiles)
             .plain(plain)
+            .maybe_attached(attached)
             .call()
             .await?;
     }

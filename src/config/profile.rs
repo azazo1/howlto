@@ -13,6 +13,7 @@ mod template {
     pub(super) const MAX_TOKENS: &str = "{{max_tokens}}";
     pub(super) const OUTPUT_N: &str = "{{output_n}}";
     pub(super) const COMMAND: &str = "{{command}}";
+    pub(super) const ATTACHED: &str = "{{attached}}";
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
@@ -24,8 +25,10 @@ pub struct Profiles {
 pub struct ShellComamndGenProfile {
     /// 系统提示词: 生成命令
     generate: String,
-    /// 系统提示词: 修改命令
+    /// 用户提示词: 修改命令
     modify: String,
+    /// 用户提示词: 附加内容
+    attached: String,
 }
 
 #[bon::bon]
@@ -43,8 +46,13 @@ impl ShellComamndGenProfile {
     }
 
     #[builder(finish_fn = finish)]
-    pub fn modify(&self, command: impl Display) -> String {
+    pub fn modify(&self, #[builder(start_fn)] command: impl Display) -> String {
         self.modify_internal(command)
+    }
+
+    #[builder(finish_fn = finish)]
+    pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
+        self.attached_internal(attached)
     }
 }
 
@@ -74,6 +82,10 @@ impl ShellComamndGenProfile {
 
     fn modify_internal(&self, command: impl Display) -> String {
         self.modify.replace(COMMAND, &command.to_string())
+    }
+
+    fn attached_internal(&self, attached: impl Display) -> String {
+        self.attached.replace(ATTACHED, &attached.to_string())
     }
 }
 
@@ -132,6 +144,10 @@ ALWAYS response in Natural LANGUAGE: {TEXT_LANG}.
 {COMMAND}
 ```
 with my prompt below."#
+            ),
+            attached: format!(
+                r#"Some information are attached below:
+{ATTACHED}"#
             ),
         }
     }

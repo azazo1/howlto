@@ -11,9 +11,7 @@ use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
 use rig::client::CompletionClient;
 use rig::message::{Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
-use rig::streaming::{
-    StreamedAssistantContent, StreamedUserContent, StreamingChat, StreamingPrompt,
-};
+use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
 use rig::tool::Tool;
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
@@ -127,14 +125,14 @@ pub struct ScgAgentResponse {
 #[derive(Debug)]
 pub struct ModifyOption {
     /// 之前输出的上下文.
-    prev_resp: ScgAgentResponse,
+    history: Vec<Message>,
     /// 需要修改的命令
     command: String,
 }
 
 impl ModifyOption {
-    pub fn new(prev_resp: ScgAgentResponse, command: String) -> Self {
-        Self { prev_resp, command }
+    pub fn new(history: Vec<Message>, command: String) -> Self {
+        Self { history, command }
     }
 }
 
@@ -213,40 +211,38 @@ impl ScgAgent {
     }
 
     /// shell command gen agent 解决一个 `prompt`, 或修改命令.
-    pub async fn resolve(
+    async fn resolve_internal(
         &self,
         prompt: String,
         modify_option: Option<ModifyOption>,
+        attached: Option<String>,
     ) -> Result<ScgAgentResponse> {
         // stream_prompt 会自动处理工具的调用.
-        let mut stream = if let Some(modify_option) = &modify_option {
-            self.agent
-                .stream_chat(
-                    &prompt,
-                    modify_option
-                        .prev_resp
-                        .messages
-                        .clone()
-                        .into_iter()
-                        .chain(
-                            [Message::user(
-                                self.profile
-                                    .modify()
-                                    .command(&modify_option.command)
-                                    .finish(),
-                            )]
-                            .into_iter(),
-                        )
-                        .collect(),
+        let attached_iter = attached
+            .into_iter()
+            .map(|a| Message::user(self.profile.attach(a).finish()));
+        let history: Vec<Message> = if let Some(modify_option) = &modify_option {
+            modify_option
+                .history
+                .clone()
+                .into_iter()
+                .chain(
+                    [Message::user(
+                        self.profile.modify(&modify_option.command).finish(),
+                    )]
+                    .into_iter(),
                 )
-                .multi_turn(MULTI_TURN)
-                .await
+                .chain(attached_iter)
+                .collect()
         } else {
-            self.agent
-                .stream_prompt(&prompt)
-                .multi_turn(MULTI_TURN)
-                .await
+            attached_iter.collect()
         };
+        let mut stream = self
+            .agent
+            .stream_chat(&prompt, history)
+            .multi_turn(MULTI_TURN)
+            .await;
+
         let mut output = FinalResponse::empty();
         let mut finish = FinishResponseArgs::empty();
         let scroll = Arc::new(ScrolliingMessage::new(40));
@@ -350,8 +346,7 @@ impl ScgAgent {
         Ok(ScgAgentResponse {
             messages: if let Some(modify_option) = modify_option {
                 modify_option
-                    .prev_resp
-                    .messages
+                    .history
                     .into_iter()
                     .chain([Message::user(prompt), Message::assistant(output)].into_iter())
                     .collect()
@@ -360,6 +355,19 @@ impl ScgAgent {
             },
             commands: finish,
         })
+    }
+}
+
+#[bon::bon]
+impl ScgAgent {
+    #[builder]
+    pub async fn resolve(
+        &self,
+        prompt: String,
+        modify_option: Option<ModifyOption>,
+        attached: Option<String>,
+    ) -> Result<ScgAgentResponse> {
+        self.resolve_internal(prompt, modify_option, attached).await
     }
 }
 
