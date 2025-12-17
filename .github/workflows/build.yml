@@ -65,15 +65,26 @@ jobs:
       run: rustup target add ${{ matrix.target }}
 
     - name: Install cargo-zigbuild
+      if: matrix.os != 'windows-latest'
       run: pip install cargo-zigbuild
 
     - name: Install Zig
+      if: matrix.os != 'windows-latest'
       uses: goto-bus-stop/setup-zig@v2
       with:
         version: 0.13.0
 
     - name: Build release binary
+      if: matrix.os != 'windows-latest'
       run: cargo zigbuild --release --target ${{ matrix.target }}
+
+    - name: Install XWin
+      if: matrix.os == 'windows-latest'
+      run: pip install cargo-xwin
+
+    - name: Build release binary
+      if: matrix.os == 'windows-latest'
+      run: cargo xwin build --release --target ${{ matrix.target }}
 
     - name: Upload binary as artifact
       uses: actions/upload-artifact@v4
