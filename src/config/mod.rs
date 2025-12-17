@@ -1,7 +1,4 @@
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::{config::profile::Profiles, error::Result};
 use serde::{Deserialize, Serialize};
@@ -133,13 +130,10 @@ pub struct AppConfigLoader {
 impl AppConfigLoader {
     pub async fn new(config_dir: impl AsRef<Path>) -> Result<Self> {
         // 创建配置文件目录, 并返回 expand 之后的路径.
-        let config_dir_str = config_dir.as_ref().to_str().ok_or(io::Error::new(
-            io::ErrorKind::InvalidFilename,
-            "Invalid filename",
-        ))?;
-        let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
         fs::create_dir_all(&config_dir).await?;
-        Ok(Self { config_dir })
+        Ok(Self {
+            config_dir: config_dir.as_ref().into(),
+        })
     }
 
     pub async fn load_or_create_config(&self) -> Result<AppConfig> {

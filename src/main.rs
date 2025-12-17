@@ -1,3 +1,4 @@
+use std::io;
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -40,6 +41,14 @@ async fn main() -> anyhow::Result<()> {
         plain,
         quiet,
     } = AppArgs::parse();
+    let config_dir_str = config_dir
+        .to_str()
+        .ok_or(io::Error::new(
+            io::ErrorKind::InvalidFilename,
+            "Invalid filename",
+        ))
+        .with_context(|| format!("无效的文件名: {config_dir:?}"))?;
+    let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
 
     let _guard = logging::init(&config_dir, !quiet)
         .await
@@ -47,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config_loader = AppConfigLoader::new(&config_dir)
         .await
-        .with_context(|| format!("无效的配置文件名: {config_dir:?}"))?;
+        .with_context(|| format!("无法创建配置目录: {config_dir:?}"))?;
     let config = config_loader
         .load_or_create_config()
         .await
