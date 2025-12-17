@@ -1,6 +1,9 @@
 use std::io::{self, Stderr};
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    tui::command_helper::MINIMUM_TUI_WIDTH,
+};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     Terminal, Viewport, crossterm,
@@ -15,7 +18,8 @@ use tokio_stream::StreamExt;
 
 const TITLE: &str = "Select Command";
 const TITLE_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
-const HINT: &str = "j/k: up/down | m: modify | c: copy | e: execute | enter: print | q/esc: quit";
+const HINT1: &str = "j/k: up/down | m: modify | c: copy";
+const HINT2: &str = "e: execute | enter: print | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
@@ -92,9 +96,10 @@ impl Widget for &mut AppWidget {
             .max_by_key(|x| x.command.len())
             .map(|x| x.command.len())
             .unwrap_or(0)
-            .max(HINT.len() + 5);
-        let [block_area, _rest_area] =
-            Layout::horizontal([Constraint::Length(width as u16), Constraint::Fill(1)]).areas(area);
+            .max(HINT1.len() + 5)
+            .max(HINT2.len() + 5)
+            .max(MINIMUM_TUI_WIDTH);
+        let [block_area] = Layout::horizontal([Constraint::Length(width as u16)]).areas(area);
         let block = Block::bordered()
             .padding(Padding::horizontal(1))
             .border_style(BORDER_STYLE)
@@ -102,9 +107,18 @@ impl Widget for &mut AppWidget {
             .title_top("") // 添加一个空占位, 让 title 不至于在最左侧.
             .title_top(Line::from(TITLE).style(TITLE_STYLE));
         block.render(block_area, buf);
-        let [list_area, hint_area] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
-            .margin(1)
-            .areas(block_area);
+        let [list_area, hint1_area, hint2_area] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .margin(1)
+        .areas(block_area);
+        let (hint1_area, hint2_area) = {
+            // right margin
+            let layout = Layout::horizontal([Constraint::Fill(1), Constraint::Length(1)]);
+            (layout.split(hint1_area)[0], layout.split(hint2_area)[0])
+        };
         StatefulWidget::render(
             List::new(
                 self.items
@@ -122,10 +136,14 @@ impl Widget for &mut AppWidget {
             buf,
             &mut self.list_state,
         );
-        Line::from(HINT)
+        Line::from(HINT1)
             .right_aligned()
             .style(HINT_STYLE)
-            .render(hint_area, buf);
+            .render(hint1_area, buf);
+        Line::from(HINT2)
+            .right_aligned()
+            .style(HINT_STYLE)
+            .render(hint2_area, buf);
     }
 }
 
@@ -223,7 +241,8 @@ impl App {
         let terminal = Terminal::with_options(
             backend,
             ratatui::TerminalOptions {
-                viewport: Viewport::Inline(3 + items.len() as u16),
+                // (border:2) + (hints:2)+ (items.len())
+                viewport: Viewport::Inline(4 + items.len() as u16),
             },
         )?;
         // todo 使用 tty 作为标准输入流, 然后 drop 的时候还原, 防止标准输入流的错误输入.

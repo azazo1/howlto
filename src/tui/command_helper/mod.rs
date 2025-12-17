@@ -14,6 +14,8 @@ use crate::{
 mod modify;
 mod select;
 
+const MINIMUM_TUI_WIDTH: usize = 45;
+
 async fn execute(command: String, shell_path: impl AsRef<Path>) -> Result<()> {
     let mut child = tokio::process::Command::new(shell_path.as_ref())
         .arg("-c")

@@ -17,7 +17,7 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tui_textarea::TextArea;
 
-use crate::error::Result;
+use crate::{error::Result, tui::command_helper::MINIMUM_TUI_WIDTH};
 
 const TITLE: &str = "Modify Prompt";
 const TITLE_STYLE: Style = Style::new()
@@ -59,7 +59,9 @@ impl Widget for &AppWidget {
         Self: Sized,
     {
         let [area] = Layout::horizontal([Constraint::Length(
-            (self.command.len() + 3).clamp(HINT.len() + 3, area.width as usize) as u16,
+            (self.command.len() + 3)
+                .clamp((HINT.len() + 3).max(MINIMUM_TUI_WIDTH), area.width as usize)
+                as u16,
         )])
         .areas(area);
         let [command_block_area, input_area, hint_area] = Layout::vertical([
