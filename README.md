@@ -41,6 +41,12 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 > [!WARNING]
 > 这个命令会直接执行模型输出的命令, 务必谨慎小心.
 
+如果你想手动附加某些帮助信息作为辅助:
+
+```shell
+cargo --help | howlto cargo build with no default feature
+```
+
 ## 🗺️ Route
 
 - [x] 简单调用, e.g: `howlto create a rust project?`.
@@ -59,4 +65,4 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 - [x] indicatif 实时显示模型输出在一行.
 - [ ] url 网页内容访问, 网页搜索.
 - [ ] 缓存功能.
-- [ ] 抵抗乱码输入流.
+- [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.
