@@ -66,3 +66,4 @@ cargo --help | howlto cargo build with no default feature
 - [ ] url 网页内容访问, 网页搜索.
 - [ ] 缓存功能.
 - [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.
+- [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
