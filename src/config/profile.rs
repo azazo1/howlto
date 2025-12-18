@@ -32,6 +32,8 @@ pub struct ShellComamndGenProfile {
     attached: String,
     /// 提示词: 提醒帮助类工具的调用, 防止幻觉.
     check_help: String,
+    /// 提示词: 提示无效命令.
+    check_valid: String,
     /// 提示词: 提醒 [`FinishResponse`] 工具的调用.
     check_finish: String,
 }
@@ -63,6 +65,11 @@ impl ShellComamndGenProfile {
     #[builder(finish_fn = fmt)]
     pub fn check_help(&self, #[builder(start_fn)] commands: impl Display) -> String {
         self.check_help_internal(commands)
+    }
+
+    #[builder(finish_fn = fmt)]
+    pub fn check_valid(&self, #[builder(start_fn)] commands: impl Display) -> String {
+        self.check_valid_internal(commands)
     }
 
     pub fn check_finish(&self) -> String {
@@ -104,6 +111,10 @@ impl ShellComamndGenProfile {
 
     fn check_help_internal(&self, commands: impl Display) -> String {
         self.check_help.replace(COMMANDS, &commands.to_string())
+    }
+
+    fn check_valid_internal(&self, commands: impl Display) -> String {
+        self.check_valid.replace(COMMANDS, &commands.to_string())
     }
 }
 
@@ -171,6 +182,9 @@ with my prompt below."#
                 r#"(SYSTEM) WARNING: You haven't call any help tool, are you sure that your output commands are valid?
 Your previous output commands are:
 {COMMANDS}"#
+            ),
+            check_valid: format!(
+                r#"(SYSTEM) WARNING: Your command output {COMMANDS} may contains invalid commands, are you sure about the answer?"#
             ),
             check_finish: format!(
                 r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?

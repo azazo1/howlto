@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -179,6 +181,15 @@ fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
             output_tokens: a.output_tokens + b.output_tokens,
             total_tokens: a.total_tokens + b.total_tokens,
         }),
+    }
+}
+
+fn is_potentially_invalid_command(s: impl AsRef<str>) -> bool {
+    let s = s.as_ref();
+    if let Some(ch) = s.chars().next() {
+        !ch.is_ascii() && which::which(Path::new(s)).is_err()
+    } else {
+        true
     }
 }
 
@@ -435,6 +446,20 @@ impl ScgAgent {
             history.push(Message::assistant(check_help_status.output));
             status.commands = check_help_status.commands;
             status.usage = usage_sum(status.usage, check_help_status.usage);
+        }
+
+        if let Some(FinishResponseArgs { results }) = &status.commands
+            && results.iter().any(is_potentially_invalid_command)
+            && let Ok(check_valid_status) = self
+                .stream_chat()
+                .span_title("Checking Valid")
+                .history(history.clone())
+                .prompt(self.profile.check_valid(results.join("\n")).fmt())
+                .call()
+                .await
+        {
+            status.commands = check_valid_status.commands;
+            status.usage = usage_sum(status.usage, check_valid_status.usage);
         }
 
         if status.commands.is_none()
