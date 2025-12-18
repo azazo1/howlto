@@ -169,6 +169,19 @@ impl ScgAgent {
     }
 }
 
+fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
+    match (a, b) {
+        (None, None) => None,
+        (None, Some(b)) => Some(b),
+        (Some(a), None) => Some(a),
+        (Some(a), Some(b)) => Some(Usage {
+            input_tokens: a.input_tokens + b.input_tokens,
+            output_tokens: a.output_tokens + b.output_tokens,
+            total_tokens: a.total_tokens + b.total_tokens,
+        }),
+    }
+}
+
 impl ScgAgent {
     #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
     pub fn new(
@@ -417,8 +430,11 @@ impl ScgAgent {
                 .call()
                 .await
         {
+            status.output.push('\n');
+            status.output += &check_help_status.output;
             history.push(Message::assistant(check_help_status.output));
             status.commands = check_help_status.commands;
+            status.usage = usage_sum(status.usage, check_help_status.usage);
         }
 
         if status.commands.is_none()
@@ -431,6 +447,7 @@ impl ScgAgent {
                 .await
         {
             status.commands = check_finish_status.commands;
+            status.usage = usage_sum(status.usage, check_finish_status.usage);
         }
 
         // todo 这里使用 ratatui 输出对话框.
