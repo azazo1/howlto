@@ -7,8 +7,8 @@ use crossterm::tty::IsTty;
 use howlto::config::AppConfigLoader;
 use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
-use howlto::detect_shell;
 use howlto::logging;
+use howlto::shell::Shell;
 use howlto::tui;
 use tokio::io::AsyncReadExt;
 
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         todo!("实现交互功能 tui::chatter")
     } else {
         let prompt: String = prompt.join(" ");
-        let (shell_name, shell_path) = detect_shell();
+        let shell = Shell::detect_shell();
         // attach stdin
         let mut stdin = tokio::io::stdin();
         let attached = if !stdin.is_tty() {
@@ -95,8 +95,7 @@ async fn main() -> anyhow::Result<()> {
         tui::command_helper::run()
             .config(config)
             .prompt(&prompt)
-            .shell_name(&shell_name)
-            .shell_path(shell_path)
+            .shell(&shell)
             .profiles(profiles)
             .plain(plain)
             .maybe_attached(attached)

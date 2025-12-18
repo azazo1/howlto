@@ -5,10 +5,7 @@ use tokio::io;
 use tracing::info;
 
 use crate::{
-    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse},
-    config::{AppConfig, profile::Profiles},
-    error::{Error, Result},
-    tui::command_helper::select::ActionKind,
+    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse}, config::{AppConfig, profile::Profiles}, error::{Error, Result}, shell::Shell, tui::command_helper::select::ActionKind
 };
 
 mod modify;
@@ -75,13 +72,12 @@ pub async fn run(
     prompt: &str,
     plain: bool,
     config: AppConfig,
-    shell_name: &str,
-    shell_path: impl AsRef<Path>,
+    shell: &Shell,
     attached: Option<String>,
     profiles: Profiles,
 ) -> Result<()> {
     run_internal(
-        prompt, plain, config, shell_name, shell_path, attached, profiles,
+        prompt, plain, config, shell, attached, profiles,
     )
     .await
 }
@@ -90,16 +86,16 @@ async fn run_internal(
     prompt: &str,
     plain: bool,
     config: AppConfig,
-    shell_name: &str,
-    shell_path: impl AsRef<Path>,
+    shell: &Shell,
     attached: Option<String>,
     profiles: Profiles,
 ) -> Result<()> {
-    let shell_path = shell_path.as_ref();
+    let shell_path = shell.path();
+    let shell_name = shell.name();
     let agent = ScgAgent::builder()
         .profile(profiles.shell_command_gen.clone())
         .os(std::env::consts::OS.to_string())
-        .shell(shell_name.to_string())
+        .shell(&shell)
         .config(config)
         .build()?;
     let response = agent

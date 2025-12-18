@@ -6,6 +6,7 @@ use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
 use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
+use crate::shell::Shell;
 use bitflags::bitflags;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, MultiTurnStreamItem};
@@ -160,7 +161,7 @@ impl ScgAgent {
     #[builder]
     pub fn builder(
         os: String,
-        shell: String,
+        shell: &Shell,
         profile: ShellComamndGenProfile,
         config: AppConfig,
     ) -> Result<Self> {
@@ -172,7 +173,7 @@ impl ScgAgent {
     #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
     pub fn new(
         os: String,
-        shell: String,
+        shell: &Shell,
         profile: ShellComamndGenProfile,
         config: AppConfig,
     ) -> Result<Self> {
@@ -198,7 +199,7 @@ impl ScgAgent {
             &profile
                 .generate()
                 .os(os)
-                .shell(shell)
+                .shell(shell.path().display())
                 .text_lang(&config.agent.language)
                 .maybe_max_tokens(config.llm.max_tokens)
                 .output_n(config.agent.shell_command_gen.output_n)
