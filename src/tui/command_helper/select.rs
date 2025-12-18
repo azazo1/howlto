@@ -15,6 +15,7 @@ use ratatui::{
 };
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tokio_stream::StreamExt;
+use unicode_width::UnicodeWidthStr;
 
 const TITLE: &str = "Select Command";
 const TITLE_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
@@ -22,8 +23,6 @@ const HINT1: &str = "j/k: up/down | m: modify | c: copy";
 const HINT2: &str = "e: execute | enter: print | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
-
-// todo 使用 unicode-width 判断输出命令的宽度.
 
 #[derive(Debug, Clone)]
 pub struct Item {
@@ -43,8 +42,8 @@ where
 
 #[derive(Debug, Clone)]
 pub struct Action {
-    pub command: String,
     pub kind: ActionKind,
+    pub command: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,11 +94,12 @@ impl Widget for &mut AppWidget {
         let width = self
             .items
             .iter()
-            .max_by_key(|x| x.command.len())
-            .map(|x| x.command.len())
+            .map(|x| x.command.width_cjk() + 5)
+            .max()
             .unwrap_or(0)
-            .max(HINT1.len() + 5)
-            .max(HINT2.len() + 5)
+            .max(TITLE.width_cjk() + 5)
+            .max(HINT1.width_cjk() + 5)
+            .max(HINT2.width_cjk() + 5)
             .max(MINIMUM_TUI_WIDTH);
         let [block_area] = Layout::horizontal([Constraint::Length(width as u16)]).areas(area);
         let block = Block::bordered()
@@ -247,7 +247,6 @@ impl App {
                 viewport: Viewport::Inline(4 + items.len() as u16),
             },
         )?;
-        // todo 使用 tty 作为标准输入流, 然后 drop 的时候还原, 防止标准输入流的错误输入.
         let mut list_state = ListState::default();
         list_state.select_first();
         Ok(App {

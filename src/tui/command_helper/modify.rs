@@ -16,6 +16,7 @@ use tokio::{
 };
 use tokio_stream::StreamExt;
 use tui_textarea::TextArea;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{error::Result, tui::command_helper::MINIMUM_TUI_WIDTH};
 
@@ -58,12 +59,12 @@ impl Widget for &AppWidget {
     where
         Self: Sized,
     {
-        let [area] = Layout::horizontal([Constraint::Length(
-            (self.command.len() + 3)
-                .clamp((HINT.len() + 3).max(MINIMUM_TUI_WIDTH), area.width as usize)
-                as u16,
-        )])
-        .areas(area);
+        let [area] =
+            Layout::horizontal([Constraint::Length((self.command.width_cjk() + 3).clamp(
+                (HINT.width_cjk() + 3).max(MINIMUM_TUI_WIDTH),
+                area.width as usize,
+            ) as u16)])
+            .areas(area);
         let [command_block_area, input_area, hint_area] = Layout::vertical([
             Constraint::Length(3),
             Constraint::Fill(1),
@@ -184,7 +185,6 @@ impl App {
     }
 
     pub async fn prompt(command: String) -> Result<Option<String>> {
-        // todo 启动的时候从 tty 读取输入, drop 的时候还原标准输入.
         App::new(command)?.run().await
     }
 }

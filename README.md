@@ -77,6 +77,8 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
 - [ ] 自动识别提示词, 对应使用不同的 agent 和 profile: chat / command / explain.
 - [ ] windows cmd / powershell / pwsh 测试.
+  - [ ] 适配非 `--help` 获取帮助的方法.
+  - [ ] windows 下没有 `man`, 寻找替代实现.
 - [ ] gemini api.
 - [ ] 测试 gpt-4.1-nano 模型.
 - [ ] 描述选中的命令 (ShellCommandGenAgent).
