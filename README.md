@@ -76,6 +76,10 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.
 - [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
 - [ ] 自动识别提示词, 对应使用不同的 agent 和 profile: chat / command / explain.
+- [ ] windows cmd / powershell / pwsh 测试.
+- [ ] gemini api.
+- [ ] 测试 gpt-4.1-nano 模型.
+- [ ] 描述选中的命令 (ShellCommandGenAgent).
 
 ## Issues
 

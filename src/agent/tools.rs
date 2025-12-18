@@ -336,14 +336,6 @@ pub struct FinishResponseArgs {
     pub results: Vec<String>,
 }
 
-impl FinishResponseArgs {
-    pub fn empty() -> Self {
-        Self {
-            results: Vec::new(),
-        }
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum NoError {}
 

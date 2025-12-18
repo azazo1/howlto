@@ -7,7 +7,7 @@ use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
 use reqwest::header::HeaderMap;
-use rig::agent::{Agent as RigAgent, FinalResponse, MultiTurnStreamItem};
+use rig::agent::{Agent as RigAgent, MultiTurnStreamItem};
 use rig::client::CompletionClient;
 use rig::message::{Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
@@ -210,49 +210,33 @@ impl ScgAgent {
         })
     }
 
-    // todo 当 ai 没有调用 final_response 工具的时候, 给个简单的 prompt, 提醒 ai 调用.
-    /// shell command gen agent 解决一个 `prompt`, 或修改命令.
-    async fn resolve_internal(
+    /// 调用 LLM, 实时显示输出.
+    /// # Returns
+    /// (LLM 输出内容, [`FinishResponse`] 结果)
+    async fn stream_chat_internal(
         &self,
+        span_title: Option<&str>,
         prompt: String,
-        modify_option: Option<ModifyOption>,
-        attached: Option<String>,
-    ) -> Result<ScgAgentResponse> {
-        // stream_prompt 会自动处理工具的调用.
-        let attached_iter = attached
-            .into_iter()
-            .map(|a| Message::user(self.profile.attach(a).finish()));
-        let history: Vec<Message> = if let Some(modify_option) = &modify_option {
-            modify_option
-                .history
-                .clone()
-                .into_iter()
-                .chain(
-                    [Message::user(
-                        self.profile.modify(&modify_option.command).finish(),
-                    )]
-                    .into_iter(),
-                )
-                .chain(attached_iter)
-                .collect()
-        } else {
-            attached_iter.collect()
-        };
+        history: Vec<Message>,
+    ) -> Result<(String, Option<FinishResponseArgs>)> {
         let mut stream = self
             .agent
-            .stream_chat(&prompt, history)
+            .stream_chat(&prompt, history.clone())
             .multi_turn(MULTI_TURN)
             .await;
 
-        let mut output = FinalResponse::empty();
-        let mut finish = FinishResponseArgs::empty();
+        let mut output = None;
+        let mut finish: Option<FinishResponseArgs> = None;
         let scroll = Arc::new(ScrolliingMessage::new(40));
         let finished = Arc::new(AtomicBool::new(false));
-        let pb_span = info_span!("Resolving");
+        let span_title = span_title.unwrap_or_default();
+        let pb_span = info_span!("", status = span_title);
         pb_span.pb_set_style(
-            &ProgressStyle::with_template("{spinner:.green} Agent: {msg}")
-                .unwrap()
-                .tick_strings(&SPINNER),
+            &ProgressStyle::with_template(&format!(
+                "{{spinner:.green}} Agent({span_title}): {{msg}}"
+            ))
+            .unwrap()
+            .tick_strings(&SPINNER),
         );
         pb_span.pb_set_message("Waiting for output...");
         let _pb_span_enter = pb_span.enter();
@@ -288,7 +272,8 @@ impl ScgAgent {
                         );
                         if tool_call.function.name == FinishResponse::NAME {
                             // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            finish = serde_json::from_value(tool_call.function.arguments).unwrap();
+                            finish =
+                                Some(serde_json::from_value(tool_call.function.arguments).unwrap());
                             break;
                         }
                     }
@@ -314,8 +299,8 @@ impl ScgAgent {
                 }
                 FinalResponse(final_response) => {
                     // final_response 包含了完整的输出.
-                    output = final_response;
-                    debug!("Usage: {:?}", output.usage());
+                    debug!("Usage: {:?}", final_response.usage());
+                    output = Some(final_response);
                 }
                 _ => warn!("Unknown stream chunk."),
             }
@@ -331,29 +316,76 @@ impl ScgAgent {
         }
         scrolling_handle.await.ok();
         drop(_pb_span_enter);
+        // 获取了 finish 之后可能会没有及时获取 final response, 导致 output 为空.
+        if let Some(output) = output {
+            Ok((output.response().to_string(), finish))
+        } else {
+            Ok((scroll.message().await, finish))
+        }
+    }
 
-        let finish = finish.results;
+    /// shell command gen agent 解决一个 `prompt`, 或修改命令.
+    async fn resolve_internal(
+        &self,
+        prompt: String,
+        modify_option: Option<ModifyOption>,
+        attached: Option<String>,
+    ) -> Result<ScgAgentResponse> {
+        // stream_prompt 会自动处理工具的调用.
+        let attached_iter = attached
+            .into_iter()
+            .map(|a| Message::user(self.profile.attach(a).finish()));
+        let history: Vec<Message> = if let Some(modify_option) = &modify_option {
+            modify_option
+                .history
+                .clone()
+                .into_iter()
+                .chain([Message::user(
+                    self.profile.modify(&modify_option.command).finish(),
+                )])
+                .chain(attached_iter)
+                .collect()
+        } else {
+            attached_iter.collect()
+        };
+
+        let (output, mut finish) = self
+            .stream_chat()
+            .span_title("Resolving")
+            .prompt(prompt.clone())
+            .history(history.clone())
+            .call()
+            .await?;
+
+        if finish.is_none() {
+            let (_, finish_) = self
+                .stream_chat()
+                .span_title("Finishing")
+                .prompt(self.profile.finish_notice())
+                .history(
+                    history
+                        .clone()
+                        .into_iter()
+                        .chain([Message::user(&output)])
+                        .collect(),
+                )
+                .call()
+                .await?;
+            finish = finish_;
+        }
+
+        let finish = finish.map(|x| x.results).unwrap_or_default();
         // todo 这里使用 ratatui 输出对话框.
         if finish.is_empty() {
             warn!("No command provided.");
-            info!("ShellCommandGenAgent: {}", output.response());
-        } else if output.response().is_empty() {
-            // 获取了 finish 之后可能会没有及时获取 final response, 导致 output.response() 为空.
-            info!("ShellCommandGenAgnet: {}", scroll.message().await);
-        } else {
-            info!("ShellCommandGenAgent: {}", output.response());
         }
-        let output = format!("{}\n{}", output.response(), finish.join("\n"));
+        info!("ShellCommandGenAgent: {}", output);
+        let output = format!("{}\n{}", output, finish.join("\n"));
         Ok(ScgAgentResponse {
-            messages: if let Some(modify_option) = modify_option {
-                modify_option
-                    .history
-                    .into_iter()
-                    .chain([Message::user(prompt), Message::assistant(output)].into_iter())
-                    .collect()
-            } else {
-                [Message::user(prompt), Message::assistant(output)].into()
-            },
+            messages: history
+                .into_iter()
+                .chain([Message::user(prompt), Message::assistant(output)].into_iter())
+                .collect(),
             commands: finish,
         })
     }
@@ -369,6 +401,16 @@ impl ScgAgent {
         attached: Option<String>,
     ) -> Result<ScgAgentResponse> {
         self.resolve_internal(prompt, modify_option, attached).await
+    }
+
+    #[builder]
+    async fn stream_chat(
+        &self,
+        span_title: Option<&str>,
+        prompt: String,
+        history: Vec<Message>,
+    ) -> Result<(String, Option<FinishResponseArgs>)> {
+        self.stream_chat_internal(span_title, prompt, history).await
     }
 }
 

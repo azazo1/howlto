@@ -29,6 +29,8 @@ pub struct ShellComamndGenProfile {
     modify: String,
     /// 用户提示词: 附加内容
     attached: String,
+    /// 用户提醒词: 提醒 [`FinishResponse`] 工具的调用.
+    finish_notice: String,
 }
 
 #[bon::bon]
@@ -53,6 +55,10 @@ impl ShellComamndGenProfile {
     #[builder(finish_fn = finish)]
     pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
         self.attached_internal(attached)
+    }
+
+    pub fn finish_notice(&self) -> String {
+        self.finish_notice.clone()
     }
 }
 
@@ -148,6 +154,11 @@ with my prompt below."#
             attached: format!(
                 r#"Some information are attached below:
 {ATTACHED}"#
+            ),
+            finish_notice: format!(
+                r#"(system) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?
+This is final desicion, you cannot ask user for more information.
+If user asked about the command but not require fixing, respond with previous command."#
             ),
         }
     }
