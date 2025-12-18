@@ -22,10 +22,10 @@ pub struct AppConfig {
 pub struct LlmConfig {
     /// LLM api key.
     #[serde(default)]
-    pub llm_api_key: String,
+    pub api_key: String,
     /// LLM 提供商 base url.
     #[serde(default)]
-    pub llm_base_url: String,
+    pub base_url: String,
     /// agent 使用的 LLM 模型.
     #[serde(default = "default_model")]
     pub model: String,

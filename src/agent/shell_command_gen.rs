@@ -189,8 +189,8 @@ impl ScgAgent {
             })
             .build()?;
         let model = openai::Client::<reqwest::Client>::builder()
-            .base_url(&config.llm.llm_base_url)
-            .api_key(&config.llm.llm_api_key)
+            .base_url(&config.llm.base_url)
+            .api_key(&config.llm.api_key)
             .http_client(http_client)
             .build()?
             .completions_api()
