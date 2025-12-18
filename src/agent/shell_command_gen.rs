@@ -430,7 +430,7 @@ impl ScgAgent {
                 .call()
                 .await
         {
-            status.output.push('\n');
+            status.output.push_str("\n--- Checking Help ---\n");
             status.output += &check_help_status.output;
             history.push(Message::assistant(check_help_status.output));
             status.commands = check_help_status.commands;
