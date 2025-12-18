@@ -13,6 +13,7 @@ mod template {
     pub(super) const MAX_TOKENS: &str = "{{max_tokens}}";
     pub(super) const OUTPUT_N: &str = "{{output_n}}";
     pub(super) const COMMAND: &str = "{{command}}";
+    pub(super) const COMMANDS: &str = "{{commands}}";
     pub(super) const ATTACHED: &str = "{{attached}}";
 }
 
@@ -23,14 +24,16 @@ pub struct Profiles {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ShellComamndGenProfile {
-    /// 系统提示词: 生成命令
+    /// 提示词(system): 生成命令
     generate: String,
-    /// 用户提示词: 修改命令
+    /// 提示词: 修改命令
     modify: String,
-    /// 用户提示词: 附加内容
+    /// 提示词: 附加内容
     attached: String,
-    /// 用户提醒词: 提醒 [`FinishResponse`] 工具的调用.
-    finish_notice: String,
+    /// 提示词: 提醒帮助类工具的调用, 防止幻觉.
+    check_help: String,
+    /// 提示词: 提醒 [`FinishResponse`] 工具的调用.
+    check_finish: String,
 }
 
 #[bon::bon]
@@ -47,18 +50,23 @@ impl ShellComamndGenProfile {
         self.generate_internal(os, shell, text_lang, max_tokens, output_n)
     }
 
-    #[builder(finish_fn = finish)]
+    #[builder(finish_fn = fmt)]
     pub fn modify(&self, #[builder(start_fn)] command: impl Display) -> String {
         self.modify_internal(command)
     }
 
-    #[builder(finish_fn = finish)]
+    #[builder(finish_fn = fmt)]
     pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
         self.attached_internal(attached)
     }
 
-    pub fn finish_notice(&self) -> String {
-        self.finish_notice.clone()
+    #[builder(finish_fn = fmt)]
+    pub fn check_help(&self, #[builder(start_fn)] commands: impl Display) -> String {
+        self.check_help_internal(commands)
+    }
+
+    pub fn check_finish(&self) -> String {
+        self.check_finish.clone()
     }
 }
 
@@ -92,6 +100,10 @@ impl ShellComamndGenProfile {
 
     fn attached_internal(&self, attached: impl Display) -> String {
         self.attached.replace(ATTACHED, &attached.to_string())
+    }
+
+    fn check_help_internal(&self, commands: impl Display) -> String {
+        self.check_help.replace(COMMANDS, &commands.to_string())
     }
 }
 
@@ -155,8 +167,13 @@ with my prompt below."#
                 r#"Some information are attached below:
 {ATTACHED}"#
             ),
-            finish_notice: format!(
-                r#"(system) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?
+            check_help: format!(
+                r#"(SYSTEM) WARNING: You haven't call any help tool, are you sure that your output commands are valid?
+Your previous output commands are:
+{COMMANDS}"#
+            ),
+            check_finish: format!(
+                r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?
 This is final desicion, you cannot ask user for more information.
 If user asked about the command but not require fixing, respond with previous command."#
             ),

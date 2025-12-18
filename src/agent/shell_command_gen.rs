@@ -6,9 +6,11 @@ use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, Tldr};
 use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
+use bitflags::bitflags;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, MultiTurnStreamItem};
 use rig::client::CompletionClient;
+use rig::completion::Usage;
 use rig::message::{Message, ToolResultContent};
 use rig::providers::openai::{self, CompletionModel};
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
@@ -130,6 +132,23 @@ pub struct ModifyOption {
     command: String,
 }
 
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct ToolCallState: u8 {
+        const TLDR = 0b0001;
+        const HELP = 0b0010;
+        const MAN  = 0b0100;
+    }
+}
+
+#[allow(dead_code)]
+struct StreamChatStatus {
+    tool_call_state: ToolCallState,
+    output: String,
+    usage: Option<Usage>,
+    commands: Option<FinishResponseArgs>,
+}
+
 impl ModifyOption {
     pub fn new(history: Vec<Message>, command: String) -> Self {
         Self { history, command }
@@ -218,7 +237,7 @@ impl ScgAgent {
         span_title: Option<&str>,
         prompt: String,
         history: Vec<Message>,
-    ) -> Result<(String, Option<FinishResponseArgs>)> {
+    ) -> Result<StreamChatStatus> {
         let mut stream = self
             .agent
             .stream_chat(&prompt, history.clone())
@@ -256,6 +275,7 @@ impl ScgAgent {
             })
         };
 
+        let mut tool_call_state = ToolCallState::empty();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
             use MultiTurnStreamItem::*;
@@ -270,11 +290,24 @@ impl ScgAgent {
                             "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
-                        if tool_call.function.name == FinishResponse::NAME {
-                            // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            finish =
-                                Some(serde_json::from_value(tool_call.function.arguments).unwrap());
-                            break;
+                        match tool_call.function.name.as_str() {
+                            FinishResponse::NAME => {
+                                // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
+                                finish = Some(
+                                    serde_json::from_value(tool_call.function.arguments).unwrap(),
+                                );
+                                break;
+                            }
+                            Man::NAME => {
+                                tool_call_state |= ToolCallState::MAN;
+                            }
+                            Help::NAME => {
+                                tool_call_state |= ToolCallState::HELP;
+                            }
+                            Tldr::NAME => {
+                                tool_call_state |= ToolCallState::TLDR;
+                            }
+                            _ => (),
                         }
                     }
                     Reasoning(reasoning) => {
@@ -317,11 +350,17 @@ impl ScgAgent {
         scrolling_handle.await.ok();
         drop(_pb_span_enter);
         // 获取了 finish 之后可能会没有及时获取 final response, 导致 output 为空.
-        if let Some(output) = output {
-            Ok((output.response().to_string(), finish))
+        let (output, usage) = if let Some(output) = output {
+            (output.response().to_string(), Some(output.usage()))
         } else {
-            Ok((scroll.message().await, finish))
-        }
+            (scroll.message().await, None)
+        };
+        Ok(StreamChatStatus {
+            tool_call_state,
+            output,
+            usage,
+            commands: finish,
+        })
     }
 
     /// shell command gen agent 解决一个 `prompt`, 或修改命令.
@@ -334,14 +373,14 @@ impl ScgAgent {
         // stream_prompt 会自动处理工具的调用.
         let attached_iter = attached
             .into_iter()
-            .map(|a| Message::user(self.profile.attach(a).finish()));
-        let history: Vec<Message> = if let Some(modify_option) = &modify_option {
+            .map(|a| Message::user(self.profile.attach(a).fmt()));
+        let mut history: Vec<Message> = if let Some(modify_option) = &modify_option {
             modify_option
                 .history
                 .clone()
                 .into_iter()
                 .chain([Message::user(
-                    self.profile.modify(&modify_option.command).finish(),
+                    self.profile.modify(&modify_option.command).fmt(),
                 )])
                 .chain(attached_iter)
                 .collect()
@@ -349,7 +388,7 @@ impl ScgAgent {
             attached_iter.collect()
         };
 
-        let (output, mut finish) = self
+        let mut status = self
             .stream_chat()
             .span_title("Resolving")
             .prompt(prompt.clone())
@@ -357,36 +396,51 @@ impl ScgAgent {
             .call()
             .await?;
 
-        if finish.is_none() {
-            let (_, finish_) = self
+        history.push(Message::user(&prompt));
+        history.push(Message::assistant(&status.output));
+
+        if status.tool_call_state.is_empty()
+            && let Ok(check_help_status) = self
                 .stream_chat()
-                .span_title("Finishing")
-                .prompt(self.profile.finish_notice())
-                .history(
-                    history
-                        .clone()
-                        .into_iter()
-                        .chain([Message::user(&output)])
-                        .collect(),
+                .span_title("Checking Help")
+                .prompt(
+                    self.profile
+                        .check_help(if let Some(commands) = &status.commands {
+                            commands.results.join("\n")
+                        } else {
+                            String::new()
+                        })
+                        .fmt(),
                 )
+                .history(history.clone())
                 .call()
-                .await?;
-            finish = finish_;
+                .await
+        {
+            history.push(Message::assistant(check_help_status.output));
+            status.commands = check_help_status.commands;
         }
 
-        let finish = finish.map(|x| x.results).unwrap_or_default();
+        if status.commands.is_none()
+            && let Ok(check_finish_status) = self
+                .stream_chat()
+                .span_title("Finishing")
+                .prompt(self.profile.check_finish())
+                .history(history.clone())
+                .call()
+                .await
+        {
+            status.commands = check_finish_status.commands;
+        }
+
         // todo 这里使用 ratatui 输出对话框.
-        if finish.is_empty() {
+        if status.commands.is_none() {
             warn!("No command provided.");
         }
-        info!("ShellCommandGenAgent: {}", output);
-        let output = format!("{}\n{}", output, finish.join("\n"));
+        let commands = status.commands.map(|x| x.results).unwrap_or_default();
+        info!("ShellCommandGenAgent: {}", status.output);
         Ok(ScgAgentResponse {
-            messages: history
-                .into_iter()
-                .chain([Message::user(prompt), Message::assistant(output)].into_iter())
-                .collect(),
-            commands: finish,
+            messages: history,
+            commands,
         })
     }
 }
@@ -409,7 +463,7 @@ impl ScgAgent {
         span_title: Option<&str>,
         prompt: String,
         history: Vec<Message>,
-    ) -> Result<(String, Option<FinishResponseArgs>)> {
+    ) -> Result<StreamChatStatus> {
         self.stream_chat_internal(span_title, prompt, history).await
     }
 }
