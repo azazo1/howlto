@@ -7,7 +7,7 @@ function __howlto_invoke --description 'howlto with shell integration'
         rm -f -- "$tmp"
         return $status
     end
-    if read -z htcmd <"$tmp"; and [ -n "$tmp" ]
+    if read -z htcmd <"$tmp"; and [ -n "$htcmd" ]
         commandline -r "$htcmd"
     end
     rm -f -- "$tmp"

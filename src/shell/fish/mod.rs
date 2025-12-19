@@ -1,6 +1,6 @@
 use crate::error::Result;
 
-const INIT: &str = include_str!("fish/init.fish");
+const INIT: &str = include_str!("init.fish");
 
 pub fn script_init() -> Result<String> {
     // shell 函数 __howlto_invoke
