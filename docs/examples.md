@@ -4,6 +4,8 @@
 
 ```shell
 howlto check disk usage of .
+howlto docker build Dockerfile_nushell to name howlto-nushell
+howlto docker run howlto-nushell with oneshot
 ```
 
 ## 通过管道提供辅助信息
