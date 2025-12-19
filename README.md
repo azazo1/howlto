@@ -67,10 +67,10 @@ cargo --help | howlto cargo build with no default feature
 以 fish 为例子, 执行下面的命令:
 
 ```fish
-howlto --init | source
+command howlto --init | source
 ```
 
-来进行 shell 集成.
+来进行 shell 集成, 你也可以把这行初始化命令添加到 `~/.config/fish/config.fish` 这类文件中.
 
 > 其他 shell 的集成命令参考: [Shell 集成](docs/shell-integration.md).
 
