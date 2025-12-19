@@ -42,6 +42,7 @@
 - [ ] shell 内置命令支持.
 - [ ] 不同的 shell 的 execute 有不同的方式.
 - [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
+- [ ] linux 下补充发行版在 os 字段.
 
 ## ❌ Cancelled
 

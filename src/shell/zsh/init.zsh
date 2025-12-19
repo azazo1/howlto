@@ -15,10 +15,8 @@ function __howlto_invoke() {
     fi
     rm -f -- "$tmp"
 }
-
 function howl() {
     local last_cmd="$(fc -nl -1)"
     __howlto_invoke "I mistyped, fixit: \`$last_cmd\`." "$@"
 }
-
 alias howlto=__howlto_invoke

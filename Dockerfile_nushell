@@ -1,0 +1,8 @@
+FROM rust:latest AS builder
+WORKDIR /root/howlto
+
+RUN curl -fsSL https://apt.fury.io/nushell/gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/fury-nushell.gpg
+RUN echo "deb https://apt.fury.io/nushell/ /" | tee /etc/apt/sources.list.d/fury.list
+RUN apt update && apt install nushell
+COPY . /root/howlto/
+RUN cargo install --path .

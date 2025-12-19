@@ -12,6 +12,7 @@ mod init_scripts {
     const FISH: &str = include_str!("fish/init.fish");
     const BASH: &str = include_str!("bash/init.bash");
     const ZSH: &str = include_str!("zsh/init.zsh");
+    const NUSHELL: &str = include_str!("nushell/init.nu");
 
     fn init_script(template: &str) -> Result<String> {
         // shell 函数 __howlto_invoke
@@ -41,6 +42,10 @@ mod init_scripts {
     pub(crate) fn zsh() -> Result<String> {
         init_script(ZSH)
     }
+
+    pub(crate) fn nushell() -> Result<String> {
+        init_script(NUSHELL)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +70,7 @@ impl FromStr for Integration {
             "fish" => Ok(Fish),
             "bash" => Ok(Bash),
             "zsh" => Ok(Zsh),
+            "nu" => Ok(Nushell),
             // todo 增加其他 shell 的支持
             _ => Err(()),
         }
@@ -77,7 +83,7 @@ impl Integration {
             Self::Fish => Ok(init_scripts::fish()?),
             Self::Bash => Ok(init_scripts::bash()?),
             Self::Zsh => Ok(init_scripts::zsh()?),
-            Self::Nushell => todo!(),
+            Self::Nushell => Ok(init_scripts::nushell()?),
             Self::Cmd => todo!(),
             Self::PowerShell => todo!(),
             Self::Pwsh => todo!(),

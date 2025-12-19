@@ -17,10 +17,8 @@ function __howlto_invoke() {
     fi
     rm -f -- "$tmp"
 }
-
 function howl() {
     local last_cmd=$(history 2 | head -n 1 | sed 's/^[ ]*[0-9]*[ ]*//')
     __howlto_invoke "I mistyped, fixit: \`$last_cmd\`." "$@"
 }
-
 alias howlto=__howlto_invoke
