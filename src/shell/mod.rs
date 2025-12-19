@@ -6,7 +6,42 @@ use std::{
 use sysinfo::{ProcessRefreshKind, RefreshKind, System, get_current_pid};
 use tracing::debug;
 
-mod fish;
+mod init_scripts {
+    use crate::error::Result;
+
+    const FISH: &str = include_str!("fish/init.fish");
+    const BASH: &str = include_str!("bash/init.bash");
+    const ZSH: &str = include_str!("zsh/init.zsh");
+
+    fn init_script(template: &str) -> Result<String> {
+        // shell 函数 __howlto_invoke
+        Ok(template.replace(
+            "__howlto_path__",
+            std::env::current_exe()
+                .or_else(|e| {
+                    if let Some(p) = std::env::args().next() {
+                        Ok(p.into())
+                    } else {
+                        Err(e)
+                    }
+                })?
+                .to_string_lossy()
+                .as_ref(),
+        ))
+    }
+
+    pub(crate) fn fish() -> Result<String> {
+        init_script(FISH)
+    }
+
+    pub(crate) fn bash() -> Result<String> {
+        init_script(BASH)
+    }
+
+    pub(crate) fn zsh() -> Result<String> {
+        init_script(ZSH)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Integration {
@@ -28,9 +63,9 @@ impl FromStr for Integration {
         use Integration::*;
         match s {
             "fish" => Ok(Fish),
-            // todo 增加其他 shell 的支持
-            "bash" => Ok(Fish),
+            "bash" => Ok(Bash),
             "zsh" => Ok(Zsh),
+            // todo 增加其他 shell 的支持
             _ => Err(()),
         }
     }
@@ -39,9 +74,9 @@ impl FromStr for Integration {
 impl Integration {
     fn init(self) -> Result<String> {
         match self {
-            Self::Fish => Ok(fish::script_init()?),
-            Self::Bash => todo!(),
-            Self::Zsh => todo!(),
+            Self::Fish => Ok(init_scripts::fish()?),
+            Self::Bash => Ok(init_scripts::bash()?),
+            Self::Zsh => Ok(init_scripts::zsh()?),
             Self::Nushell => todo!(),
             Self::Cmd => todo!(),
             Self::PowerShell => todo!(),
