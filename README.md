@@ -8,6 +8,8 @@ Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini`.
 
 <video src="https://private-user-images.githubusercontent.com/60778594/527598361-ffc3b745-0be1-4c98-8a6c-95c56311ae2e.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjU5Nzk5MDksIm5iZiI6MTc2NTk3OTYwOSwicGF0aCI6Ii82MDc3ODU5NC81Mjc1OTgzNjEtZmZjM2I3NDUtMGJlMS00Yzk4LThhNmMtOTVjNTYzMTFhZTJlLm1wND9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEyMTclMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMjE3VDEzNTMyOVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWFjMWUyNTQ0OGQxNWU2ZjNjMWUwZjlmNTllMjg4YjNlMjg2MWMyMmVmNDBjZTlkMzMxMjYyZTg3ODZjMDVjNTYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.uyvolXMKAnkVfI6SvtE8ZZuehgJMly9rR0_R5bkGPUw" title="Demo" autoplay muted loop></video>
 
+<!-- sqlite3 demo -->
+
 ## 安装
 
 ```shell
@@ -21,7 +23,7 @@ cargo install --git https://github.com/azazo1/howlto.git
 默认配置目录: `~/.config/howlto/config.toml` (Windows 下 `~` 为 `%USERPROFILE%`).
 
 先启动一次 `howlto` 创建配置文件 (可以忽略此次报错),
-修改配置文件中的 `llm_api_key` 和 `llm_base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
+修改配置文件中的 `api_key` 和 `base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
 然后就能正常使用了.
 
 ## 使用
@@ -82,6 +84,8 @@ cargo --help | howlto cargo build with no default feature
 - [ ] gemini api.
 - [ ] 测试 gpt-4.1-nano 模型.
 - [ ] 描述选中的命令 (ShellCommandGenAgent).
+- [ ] feat: 执行之后根据错误码和输出的内容进行分析, 重新更改 command.
+- [ ] 插件(流程控制) / mcp
 
 ## Issues
 
