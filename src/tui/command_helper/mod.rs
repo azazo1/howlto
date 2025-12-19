@@ -8,7 +8,7 @@ use tokio::{
     fs,
     io::{self, AsyncWriteExt},
 };
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse},
@@ -131,7 +131,7 @@ async fn run_internal(
             let action = select::App::select(response.commands.clone()).await?;
             let mut should_exit = true;
             if let Some(action) = &action {
-                info!("Select action: {action:?}");
+                debug!("Select action: {action:?}");
                 match action.kind {
                     ActionKind::Copy => copy(action.command.clone())?,
                     ActionKind::Execute => execute(action.command.clone(), shell.path()).await?,
