@@ -57,7 +57,7 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 cargo --help | howlto cargo build with no default feature
 ```
 
-## 🗺️ Route
+## 🏁 Todos
 
 - [x] 简单调用, e.g: `howlto create a rust project?`.
 - [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
@@ -86,6 +86,9 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 描述选中的命令 (ShellCommandGenAgent).
 - [ ] feat: 执行之后根据错误码和输出的内容进行分析, 重新更改 command.
 - [ ] 插件(流程控制) / mcp
+- [ ] 编写一些测试 prompts, 用于检测 profile 更改之后是否符合要求.
+  - [ ] macos, linux, windows 等各平台下的效果
+  - [ ] cmd, powershell, fish, nushell, bash 等各个 shell 下的命令正确性
 
 ## Issues
 
