@@ -1,6 +1,6 @@
 use std::{io, path::Path};
 use tracing::level_filters::LevelFilter;
-use tracing::{Level, Metadata};
+use tracing::Metadata;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_indicatif::IndicatifLayer;
