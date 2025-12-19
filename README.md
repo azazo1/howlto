@@ -60,6 +60,18 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 cargo --help | howlto cargo build with no default feature
 ```
 
+### Shell 集成
+
+以 fish 为例子, 执行下面的命令:
+
+```fish
+howlto --init | source
+```
+
+来进行 shell 集成, 实现了自动将命令放入 shell 输入框等功能.
+
+> 其他 shell 的集成命令参考: [Shell 集成](docs/shell-integration.md).
+
 ## 🏁 Todos
 
 - [x] 简单调用, e.g: `howlto create a rust project?`.
@@ -81,6 +93,7 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.
 - [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
 - [ ] 自动识别提示词, 对应使用不同的 agent 和 profile: chat / command / explain.
+  - [ ] 并提供参数强行指定某些模式.
 - [ ] windows cmd / powershell / pwsh 测试.
   - [ ] 适配非 `--help` 获取帮助的方法.
   - [ ] windows 下没有 `man`, 寻找替代实现.
@@ -92,9 +105,20 @@ cargo --help | howlto cargo build with no default feature
 - [ ] 编写一些测试 prompts, 用于检测 profile 更改之后是否符合要求.
   - [ ] macos, linux, windows 等各平台下的效果
   - [ ] cmd, powershell, fish, nushell, bash 等各个 shell 下的命令正确性
+- [ ] `-x` 参数直接执行第一个候选命令.
+- [ ] translate agent (stdin / text file).
+- [ ] help/man tool: 搜索特定的 pattern, 增加阅读的效率.
+- [ ] shell 内置命令支持.
+- [ ] 不同的 shell 的 execute 有不同的方式.
 
 ## Issues
 
 只有 macOS Apple Silicon 被测试运行过, 其他平台上的使用如遇问题欢迎提出 issues.
+
+## Referencing
+
+- ⭐[TheR1D/shell_gpt](https://github.com/TheR1D/shell_gpt): howlto is inspired by this repo.
+- 🦆[szyazi/yazi](https://github.com/sxyazi/yazi): for it's shell integration.
+- 🗯️[nvbn/thefuck](https://github.com/nvbn/thefuck): for it's shell integration and fixing command ideas.
 
 ## Enjoy :)

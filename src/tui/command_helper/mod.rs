@@ -1,11 +1,21 @@
-use std::{path::Path, process::Stdio};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use clipboard_rs::Clipboard;
-use tokio::io;
+use tokio::{
+    fs,
+    io::{self, AsyncWriteExt},
+};
 use tracing::info;
 
 use crate::{
-    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse}, config::{AppConfig, profile::Profiles}, error::{Error, Result}, shell::Shell, tui::command_helper::select::ActionKind
+    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse},
+    config::{AppConfig, profile::Profiles},
+    error::{Error, Result},
+    shell::Shell,
+    tui::command_helper::select::ActionKind,
 };
 
 mod modify;
@@ -67,6 +77,18 @@ async fn modify(
     }
 }
 
+async fn print_to_input_buffer(
+    htcmd_file: &Option<impl AsRef<Path>>,
+    command: &str,
+) -> io::Result<()> {
+    println!("{}", command);
+    if let Some(htcmd_file) = htcmd_file {
+        let mut f = fs::OpenOptions::new().write(true).open(htcmd_file).await?;
+        f.write_all(command.as_bytes()).await?;
+    }
+    Ok(())
+}
+
 #[bon::builder]
 pub async fn run(
     prompt: &str,
@@ -75,11 +97,9 @@ pub async fn run(
     shell: &Shell,
     attached: Option<String>,
     profiles: Profiles,
+    htcmd_file: Option<PathBuf>,
 ) -> Result<()> {
-    run_internal(
-        prompt, plain, config, shell, attached, profiles,
-    )
-    .await
+    run_internal(prompt, plain, config, shell, attached, profiles, htcmd_file).await
 }
 
 async fn run_internal(
@@ -89,13 +109,12 @@ async fn run_internal(
     shell: &Shell,
     attached: Option<String>,
     profiles: Profiles,
+    htcmd_file: Option<PathBuf>,
 ) -> Result<()> {
-    let shell_path = shell.path();
-    let shell_name = shell.name();
     let agent = ScgAgent::builder()
         .profile(profiles.shell_command_gen.clone())
         .os(std::env::consts::OS.to_string())
-        .shell(&shell)
+        .shell(shell)
         .config(config)
         .build()?;
     let response = agent
@@ -115,8 +134,10 @@ async fn run_internal(
                 info!("Select action: {action:?}");
                 match action.kind {
                     ActionKind::Copy => copy(action.command.clone())?,
-                    ActionKind::Execute => execute(action.command.clone(), shell_path).await?,
-                    ActionKind::Print => println!("{}", action.command),
+                    ActionKind::Execute => execute(action.command.clone(), shell.path()).await?,
+                    ActionKind::PrintToInputBuffer => {
+                        print_to_input_buffer(&htcmd_file, &action.command).await?
+                    }
                     ActionKind::Modify => {
                         should_exit =
                             !modify(&agent, &mut response, action.command.clone()).await?;

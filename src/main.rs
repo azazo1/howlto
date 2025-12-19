@@ -34,6 +34,10 @@ struct AppArgs {
         default_value_t = false
     )]
     quiet: bool,
+    #[clap(long, help = "输出 shell 集成初始化脚本")]
+    init: bool,
+    #[clap(long, help = "[Shell 集成参数]")]
+    htcmd_file: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -43,7 +47,23 @@ async fn main() -> anyhow::Result<()> {
         config: config_dir,
         plain,
         quiet,
+        init,
+        htcmd_file
     } = AppArgs::parse();
+
+    let shell = Shell::detect_shell();
+
+    if init {
+        println!(
+            "{}",
+            shell.init().ok_or(anyhow::anyhow!(
+                "Shell integration for {} is not implemented",
+                shell.name()
+            ))??
+        );
+        return Ok(());
+    }
+
     let config_dir_str = config_dir
         .to_str()
         .ok_or(io::Error::new(
@@ -81,7 +101,6 @@ async fn main() -> anyhow::Result<()> {
         todo!("实现交互功能 tui::chatter")
     } else {
         let prompt: String = prompt.join(" ");
-        let shell = Shell::detect_shell();
         // attach stdin
         let mut stdin = tokio::io::stdin();
         let attached = if !stdin.is_tty() {
@@ -95,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         tui::command_helper::run()
             .config(config)
             .prompt(&prompt)
+            .maybe_htcmd_file(htcmd_file)
             .shell(&shell)
             .profiles(profiles)
             .plain(plain)

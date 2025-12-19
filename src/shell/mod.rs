@@ -1,4 +1,6 @@
+use crate::error::Result;
 use std::{
+    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -17,12 +19,13 @@ enum Integration {
     PowerShell,
     Pwsh,
     Elvish,
+    Xonsh,
 }
 
 impl FromStr for Integration {
     type Err = ();
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         use Integration::*;
         match s {
             "fish" => Ok(Fish),
@@ -35,9 +38,9 @@ impl FromStr for Integration {
 }
 
 impl Integration {
-    fn init(self) -> String {
+    fn init(self) -> Result<String> {
         match self {
-            Self::Fish => fish::script_init(),
+            Self::Fish => Ok(fish::script_init()?),
             Self::Bash => todo!(),
             Self::Zsh => todo!(),
             Self::Nushell => todo!(),
@@ -45,6 +48,7 @@ impl Integration {
             Self::PowerShell => todo!(),
             Self::Pwsh => todo!(),
             Self::Elvish => todo!(),
+            Self::Xonsh => todo!()
         }
     }
 }
@@ -53,6 +57,7 @@ impl Integration {
 pub struct Shell {
     name: String,
     path: PathBuf,
+    // todo 添加 pid 字段.
     integration: Option<Integration>,
 }
 
@@ -91,6 +96,7 @@ const SHELLS: &[&str] = &[
     "elvish",  // Elvish Shell (具有独特的设计哲学，强调可编程性和交互式界面的分离)
     "mksh",    // MirBSD Korn Shell (KSH 的一个活跃分支，注重可移植性)
     "wish",    // Windowing Shell (基于 Tcl/Tk 的图形化 Shell)
+    "xonsh",   // Python shell
 ];
 
 fn is_known_shell(s: &str) -> bool {
@@ -115,6 +121,10 @@ impl Shell {
 }
 
 impl Shell {
+    pub fn init(&self) -> Option<Result<String>> {
+        self.integration.map(|i| i.init())
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }

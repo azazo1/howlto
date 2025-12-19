@@ -33,6 +33,7 @@ pub struct LlmConfig {
     pub max_tokens: Option<u64>,
     /// LLM 输出 temperature 参数.
     pub temperature: Option<f64>,
+    // todo gemini, anthropic api ...
 }
 
 #[derive(Debug, Serialize, Deserialize)]

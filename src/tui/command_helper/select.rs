@@ -20,7 +20,7 @@ use unicode_width::UnicodeWidthStr;
 const TITLE: &str = "Select Command";
 const TITLE_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
 const HINT1: &str = "j/k: up/down | m: modify | c: copy";
-const HINT2: &str = "e: execute | enter: print | q/esc: quit";
+const HINT2: &str = "e: execute | enter: place to input | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
@@ -51,7 +51,7 @@ pub enum ActionKind {
     Copy,
     Execute,
     Modify,
-    Print,
+    PrintToInputBuffer,
 }
 
 struct AppWidget {
@@ -225,7 +225,7 @@ impl App {
                 AppEvent::Up => self.widget.list_state.select_previous(),
                 AppEvent::Down => self.widget.list_state.select_next(),
                 AppEvent::Quit => break Ok(None),
-                AppEvent::Enter => break Ok(self.action_result(ActionKind::Print)),
+                AppEvent::Enter => break Ok(self.action_result(ActionKind::PrintToInputBuffer)),
                 AppEvent::C => break Ok(self.action_result(ActionKind::Copy)),
                 AppEvent::M => break Ok(self.action_result(ActionKind::Modify)),
                 AppEvent::Err(e) => break Err(e),
