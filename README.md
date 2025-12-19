@@ -8,7 +8,7 @@ Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini`.
 
 <video src="https://private-user-images.githubusercontent.com/60778594/527598361-ffc3b745-0be1-4c98-8a6c-95c56311ae2e.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjU5Nzk5MDksIm5iZiI6MTc2NTk3OTYwOSwicGF0aCI6Ii82MDc3ODU5NC81Mjc1OTgzNjEtZmZjM2I3NDUtMGJlMS00Yzk4LThhNmMtOTVjNTYzMTFhZTJlLm1wND9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEyMTclMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMjE3VDEzNTMyOVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWFjMWUyNTQ0OGQxNWU2ZjNjMWUwZjlmNTllMjg4YjNlMjg2MWMyMmVmNDBjZTlkMzMxMjYyZTg3ODZjMDVjNTYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.uyvolXMKAnkVfI6SvtE8ZZuehgJMly9rR0_R5bkGPUw" title="Demo" autoplay muted loop></video>
 
-<!-- sqlite3 demo -->
+<!-- todo sqlite3 demo -->
 
 ## 安装
 
@@ -26,7 +26,7 @@ cargo install --git https://github.com/azazo1/howlto.git
 修改配置文件中的 `api_key` 和 `base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
 然后就能正常使用了.
 
-> [!note]
+> [!NOTE]
 > 项目仍然处于非常初步的阶段, 可能会引入许多 breaking changes💥, 因此可能在某次更新后需要手动调整配置内容以继续使用.
 
 ## 使用
@@ -36,6 +36,8 @@ cargo install --git https://github.com/azazo1/howlto.git
 ```shell
 howlto upgrade all bun packages
 ```
+
+> How to upgrade all bun packages?
 
 你会获得一个选项框, 可以复制, 编辑, 执行模型提供的命令等.
 
@@ -68,9 +70,22 @@ cargo --help | howlto cargo build with no default feature
 howlto --init | source
 ```
 
-来进行 shell 集成, 实现了自动将命令放入 shell 输入框等功能.
+来进行 shell 集成.
 
 > 其他 shell 的集成命令参考: [Shell 集成](docs/shell-integration.md).
+
+shell 集成之后, 可以使用以下 features:
+
+- `Enter` 选择命令后自动填写到输入缓冲区.
+- 自动修复上一条命令
+
+  ```shell
+  git psh -to origin main
+  howl
+  # git push -u origin main
+  ```
+
+  > 就像在提问: How?
 
 ## 🏁 Todos
 
@@ -78,6 +93,7 @@ howlto --init | source
 - [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
 - [x] 自动读取命令的 `--help` / `man` / `tldr`.
 - [ ] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
+- [ ] 添加 `thefuck` 帮助 tool.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] shell 集成, 自动补全, 自动获取上一个命令的输出 (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
@@ -98,7 +114,7 @@ howlto --init | source
   - [ ] 适配非 `--help` 获取帮助的方法.
   - [ ] windows 下没有 `man`, 寻找替代实现.
 - [ ] gemini api.
-- [ ] 测试 gpt-4.1-nano 模型.
+- [x] 测试 gpt-4.1-nano 模型 (结果目测不如 gpt-4o-mini).
 - [ ] 描述选中的命令 (ShellCommandGenAgent).
 - [ ] feat: 执行之后根据错误码和输出的内容进行分析, 重新更改 command.
 - [ ] 插件(流程控制) / mcp
@@ -110,6 +126,7 @@ howlto --init | source
 - [ ] help/man tool: 搜索特定的 pattern, 增加阅读的效率.
 - [ ] shell 内置命令支持.
 - [ ] 不同的 shell 的 execute 有不同的方式.
+- [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
 
 ## Issues
 
