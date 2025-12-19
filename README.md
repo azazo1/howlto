@@ -26,6 +26,9 @@ cargo install --git https://github.com/azazo1/howlto.git
 修改配置文件中的 `api_key` 和 `base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
 然后就能正常使用了.
 
+> [!note]
+> 项目仍然处于非常初步的阶段, 可能会引入许多 breaking changes💥, 因此可能在某次更新后需要手动调整配置内容以继续使用.
+
 ## 使用
 
 直接像普通的英语句子一样提问:
