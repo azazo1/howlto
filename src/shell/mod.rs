@@ -125,12 +125,12 @@ const SHELLS: phf::Set<&'static str> = phf::phf_set!(
     "sash", // Standalone Shell (常用于系统恢复)
     "ion",  // Ion Shell (受 fish 启发，使用 Rust 编写)
     // 现代和创新 Shells (新增)
-    "nushell", // NuShell / Nush (使用 Rust 编写，核心概念是处理结构化数据而非原始文本)
-    "oil",     // Oil Shell (旨在兼容 Bash 并提供更健壮的脚本语言 YSH)
-    "elvish",  // Elvish Shell (具有独特的设计哲学，强调可编程性和交互式界面的分离)
-    "mksh",    // MirBSD Korn Shell (KSH 的一个活跃分支，注重可移植性)
-    "wish",    // Windowing Shell (基于 Tcl/Tk 的图形化 Shell)
-    "xonsh",   // Python shell
+    "nu",     // NuShell / Nush (使用 Rust 编写，核心概念是处理结构化数据而非原始文本)
+    "oil",    // Oil Shell (旨在兼容 Bash 并提供更健壮的脚本语言 YSH)
+    "elvish", // Elvish Shell (具有独特的设计哲学，强调可编程性和交互式界面的分离)
+    "mksh",   // MirBSD Korn Shell (KSH 的一个活跃分支，注重可移植性)
+    "wish",   // Windowing Shell (基于 Tcl/Tk 的图形化 Shell)
+    "xonsh",  // Python shell
 );
 
 fn is_known_shell(p: &Path) -> bool {
