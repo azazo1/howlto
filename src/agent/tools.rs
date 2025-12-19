@@ -327,6 +327,73 @@ impl Tool for Tldr {
     }
 }
 
+/// 调用外部 thefuck 工具修复命令
+pub struct TheFuck {
+    shell_name: String,
+}
+
+impl TheFuck {
+    pub fn new(shell_name: String) -> Self {
+        Self { shell_name }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TheFuckArgs {
+    command: String,
+}
+
+impl Tool for TheFuck {
+    const NAME: &'static str = "thefuck";
+
+    type Error = io::Error;
+
+    type Args = TheFuckArgs;
+
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name(),
+            description: "Fix a command automatically, when you need to fix command, you should try it before fixing yourself, but be aware whether it fits user's requirement.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command you want to fix."
+                    }
+                },
+                "required": ["command"],
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let command = args.command;
+        let Ok(thefuck_program) = which::which("thefuck") else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "thefuck program not found, this tool is not available now.",
+            ))?
+        };
+        let output = tokio::process::Command::new(thefuck_program)
+            .env("TF_SHELL", &self.shell_name)
+            .env("TF_ALIAS", "fuck")
+            .env("PYTHONIOENCODING", "utf-8")
+            .arg(command)
+            .arg("THEFUCK_ARGUMENT_PLACEHOLDER")
+            .arg("--yeah")
+            .output()
+            .await?;
+        Ok(format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+}
+
 /// 结束输出, 给定输出结果
 pub struct FinishResponse;
 

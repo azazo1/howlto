@@ -20,20 +20,12 @@ struct AppArgs {
     prompt: Vec<String>,
     #[clap(short, long, help = "配置文件所在的目录", default_value = DEFAULT_CONFIG_DIR)]
     config: PathBuf,
-    #[clap(
-        short,
-        long,
-        help = "直接输出所有候选命令, 无需交互选择.",
-        default_value_t = false
-    )]
+    #[clap(short, long, help = "直接输出所有候选命令, 无需交互选择.")]
     plain: bool,
-    #[clap(
-        short,
-        long,
-        help = "不在标准错误流输出进度信息.",
-        default_value_t = false
-    )]
+    #[clap(short, long, help = "不在标准错误流输出进度信息.")]
     quiet: bool,
+    #[clap(long, help = "输出额外的调试信息, 比如工具调用的结果")]
+    debug: bool,
     #[clap(long, help = "输出 shell 集成初始化脚本")]
     init: bool,
     #[clap(long, help = "[Shell 集成参数]")]
@@ -48,7 +40,8 @@ async fn main() -> anyhow::Result<()> {
         plain,
         quiet,
         init,
-        htcmd_file
+        htcmd_file,
+        debug,
     } = AppArgs::parse();
 
     let shell = Shell::detect_shell();
@@ -85,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("无法加载 Profiles: {config_dir:?}"))?;
 
-    let _guard = logging::init(&config_dir, !quiet)
+    let _guard = logging::init(&config_dir, !quiet, debug)
         .await
         .with_context(|| format!("无法初始化日志: {config_dir:?}"))?;
 

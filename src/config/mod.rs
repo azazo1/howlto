@@ -45,9 +45,12 @@ pub struct AgentConfig {
     /// 是否能够执行成功取决与程序是否接受 `--help`参数.
     #[serde(default = "default_use_tool_help")]
     pub use_tool_help: bool,
-    /// 是否使用 tldr 获取帮助信息.
+    /// 是否使用 tldr 获取帮助信息工具.
     #[serde(default = "default_use_tool_tldr")]
     pub use_tool_tldr: bool,
+    /// 是否使用 thefuck 修复命令工具.
+    #[serde(default = "default_use_tool_thefuck")]
+    pub use_tool_thefuck: bool,
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
@@ -90,6 +93,10 @@ impl Default for ShellCommandGenConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+fn default_use_tool_thefuck() -> bool {
+    true
 }
 
 fn default_wait_for_output_scrolling() -> bool {

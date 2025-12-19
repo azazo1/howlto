@@ -93,7 +93,7 @@ shell 集成之后, 可以使用以下 features:
 - [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
 - [x] 自动读取命令的 `--help` / `man` / `tldr`.
 - [x] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
-- [ ] 添加 `thefuck` 帮助 tool.
+- [x] 添加 `thefuck` 帮助 tool.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] shell 集成, 自动补全, 自动获取上一个命令的输出 (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
@@ -137,5 +137,6 @@ shell 集成之后, 可以使用以下 features:
 - ⭐[TheR1D/shell_gpt](https://github.com/TheR1D/shell_gpt): howlto is inspired by this repo.
 - 🦆[szyazi/yazi](https://github.com/sxyazi/yazi): for it's shell integration.
 - 🗯️[nvbn/thefuck](https://github.com/nvbn/thefuck): for it's shell integration and fixing command ideas.
+- 📒[tldr-pages/tldr](https://github.com/tldr-pages/tldr): for it's TL;DR content.
 
 ## Enjoy :)
