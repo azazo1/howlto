@@ -92,7 +92,7 @@ shell 集成之后, 可以使用以下 features:
 - [x] 简单调用, e.g: `howlto create a rust project?`.
 - [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
 - [x] 自动读取命令的 `--help` / `man` / `tldr`.
-- [ ] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
+- [x] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
 - [ ] 添加 `thefuck` 帮助 tool.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).

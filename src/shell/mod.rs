@@ -60,7 +60,7 @@ pub struct Shell {
     integration: Option<Integration>,
 }
 
-const SHELLS: &[&str] = &[
+const SHELLS: phf::Set<&'static str> = phf::phf_set!(
     // ------------------------------------
     // Unix/Linux 常用和经典 Shells (补充了 ksh 的实现)
     "sh",    // Bourne Shell (经典，许多现代 Shell 的基础)
@@ -96,15 +96,16 @@ const SHELLS: &[&str] = &[
     "mksh",    // MirBSD Korn Shell (KSH 的一个活跃分支，注重可移植性)
     "wish",    // Windowing Shell (基于 Tcl/Tk 的图形化 Shell)
     "xonsh",   // Python shell
-];
+);
 
-fn is_known_shell(s: &str) -> bool {
-    for shell in SHELLS {
-        if s.contains(shell) {
-            return true;
-        }
+fn is_known_shell(p: &Path) -> bool {
+    if let Some(s) = p.file_stem()
+        && let Some(s) = s.to_str()
+    {
+        SHELLS.contains(s)
+    } else {
+        false
     }
-    false
 }
 
 #[bon::bon]
@@ -172,13 +173,14 @@ impl Shell {
             let Some(name) = parent.name().to_str() else {
                 continue;
             };
-            if !is_known_shell(name) {
+            let path: PathBuf = parent.exe().unwrap_or(Path::new("")).into();
+            if !is_known_shell(path.as_path()) {
                 continue;
             }
             break Shell::builder()
                 .maybe_integration(name.parse().ok())
                 .name(name.into())
-                .path(parent.exe().unwrap_or(Path::new("")).into())
+                .path(path)
                 .build();
         }
     }
