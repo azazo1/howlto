@@ -1,6 +1,5 @@
 use crate::error::Result;
 use std::{
-    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -48,7 +47,7 @@ impl Integration {
             Self::PowerShell => todo!(),
             Self::Pwsh => todo!(),
             Self::Elvish => todo!(),
-            Self::Xonsh => todo!()
+            Self::Xonsh => todo!(),
         }
     }
 }
