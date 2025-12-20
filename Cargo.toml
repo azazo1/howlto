@@ -46,3 +46,10 @@ required-features = ["mocker"]
 [features]
 default = []
 mocker = ["dep:axum"]
+
+# Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
