@@ -46,17 +46,6 @@ async fn main() -> anyhow::Result<()> {
 
     let shell = Shell::detect_shell();
 
-    if init {
-        println!(
-            "{}",
-            shell.init().ok_or(anyhow::anyhow!(
-                "Shell integration for {} is not implemented",
-                shell.name()
-            ))??
-        );
-        return Ok(());
-    }
-
     let config_dir_str = config_dir
         .to_str()
         .ok_or(io::Error::new(
@@ -81,6 +70,17 @@ async fn main() -> anyhow::Result<()> {
     let _guard = logging::init(&config_dir, !quiet, debug)
         .await
         .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
+
+    if init {
+        println!(
+            "{}",
+            shell.init().ok_or(anyhow::anyhow!(
+                "Shell integration for {} is not implemented",
+                shell.name()
+            ))??
+        );
+        return Ok(());
+    }
 
     // 提前检查
     if config.llm.base_url.is_empty() {
