@@ -11,10 +11,10 @@ bitflags = "2.10.0"
 bon = "3.8.1"
 clap = {version = "4.5.53", features = ["derive"]}
 clipboard-rs = "0.3.1"
-crossterm = {version = "^0.28", features = ["event-stream", "libc", "use-dev-tty"]}
-hyper-tls = { version = "0.6.0", features = ["vendored"] }
+crossterm = {version = "^0.28", features = ["event-stream"]}
+hyper-tls = {version = "0.6.0", features = ["vendored"]}
 indicatif = {version = "^0.18", features = ["tokio"]}
-phf = { version = "0.13.1", features = ["macros"] }
+phf = {version = "0.13.1", features = ["macros"]}
 ratatui = "^0.29.0"
 reqwest = {version = "0.12.25"}
 rig-core = "0.27.0"
@@ -34,6 +34,9 @@ tui-textarea = "0.7.0"
 unicode-width = "^0.2.0"
 uuid = {version = "1.11", features = ["v4"]}
 which = "8.0.0"
+
+[target.'cfg(unix)'.dependencies]
+crossterm = {version = "^0.28", features = ["libc", "use-dev-tty"]}
 
 [[bin]]
 name = "mocker"
