@@ -39,10 +39,11 @@
 - [ ] `-x` 参数直接执行第一个候选命令.
 - [ ] translate agent (stdin / text file).
 - [ ] help/man tool: 搜索特定的 pattern, 增加阅读的效率.
-- [ ] shell 内置命令支持.
+- [ ] shell 内置命令 (builtin) 支持, 也许可以通过获取各个 shell 的帮助页面网页内容实现.
 - [ ] 不同的 shell 的 execute 有不同的方式.
 - [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
 - [ ] linux 下补充发行版在 os 字段.
+- [ ] shell 集成快捷键, 绑定某个快捷键将输入内容描述替换成命令 (强制 command gen profile).
 
 ## ❌ Cancelled
 
