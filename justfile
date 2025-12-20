@@ -16,6 +16,11 @@ nushell build='0':
     fi
     docker run -it --rm -v ./debug_config:/root/.config/howlto/ howlto-nushell nu
 
+port:
+    mkdir -p archives
+    zip -r archives/howlto.zip . -x "./target/*" -x "./.git/*" -x "./archives/*"
+    simple-http-server -- archives
+
 clean:
     docker image rm howlto-nushell
     cargo clean
