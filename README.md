@@ -98,9 +98,9 @@ shell 集成之后, 可以使用以下 features:
 ## Referencing
 
 - ⭐[TheR1D/shell_gpt](https://github.com/TheR1D/shell_gpt): howlto is inspired by this repo.
-- 🦆[szyazi/yazi](https://github.com/sxyazi/yazi): for it's shell integration.
-- 🗯️[nvbn/thefuck](https://github.com/nvbn/thefuck): for it's shell integration and fixing command ideas.
+- 🦆[szyazi/yazi](https://github.com/sxyazi/yazi): for it's shell integration method.
+- 🧠[ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide): for it's shell integration method.
+- 🗯️[nvbn/thefuck](https://github.com/nvbn/thefuck): for it's shell integration method and fixing commands ideas.
 - 📒[tldr-pages/tldr](https://github.com/tldr-pages/tldr): for it's TL;DR content.
-- 🔗[chrisant996/clink](https://github.com/chrisant996/clink): Windows CMD integration.
 
 ## Enjoy :)
