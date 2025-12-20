@@ -83,7 +83,12 @@ async fn print_to_input_buffer(
 ) -> io::Result<()> {
     println!("{}", command);
     if let Some(htcmd_file) = htcmd_file {
-        let mut f = fs::OpenOptions::new().write(true).open(htcmd_file).await?;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(htcmd_file)
+            .await?;
         f.write_all(command.as_bytes()).await?;
     }
     Ok(())
