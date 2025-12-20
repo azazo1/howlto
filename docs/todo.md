@@ -44,6 +44,7 @@
 - [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
 - [ ] linux 下补充发行版在 os 字段.
 - [ ] shell 集成快捷键, 绑定某个快捷键将输入内容描述替换成命令 (强制 command gen profile).
+- [ ] 减小构建大小.
 
 ## ❌ Cancelled
 
