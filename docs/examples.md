@@ -11,6 +11,15 @@ howlto list zip a.zip
 howlto ls only files with time asc
 ```
 
+## 修改
+
+```shell
+howlto list file real sizes in howlto-windows-x86_64.zip
+# 输出: unzip -l howlto-windows-x86_64.zip
+# (m)修改 Prompt: convert sizes to human readable.
+# 输出: unzip -l howlto-windows-x86_64.zip | awk 'NR>3 { printf "% -40s % 8.1f %s\n", $4, $1/1024/1024, "MB" }'
+```
+
 ## 通过管道提供辅助信息
 
 ```shell
