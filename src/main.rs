@@ -68,25 +68,25 @@ async fn main() -> anyhow::Result<()> {
 
     let config_loader = AppConfigLoader::new(&config_dir)
         .await
-        .with_context(|| format!("无法创建配置目录: {config_dir:?}"))?;
+        .with_context(|| format!("无法创建配置目录: {}", config_dir.display()))?;
     let config = config_loader
         .load_or_create_config()
         .await
-        .with_context(|| format!("无法加载配置: {config_dir:?}"))?;
+        .with_context(|| format!("无法加载配置: {}", config_dir.display()))?;
     let profiles = config_loader
         .load_or_create_profiles()
         .await
-        .with_context(|| format!("无法加载 Profiles: {config_dir:?}"))?;
+        .with_context(|| format!("无法加载 Profiles: {}", config_dir.display()))?;
 
     let _guard = logging::init(&config_dir, !quiet, debug)
         .await
-        .with_context(|| format!("无法初始化日志: {config_dir:?}"))?;
+        .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
 
     // 提前检查
     if config.llm.base_url.is_empty() {
         Err(anyhow::anyhow!(
-            "LLM Base Url 为空, 请检查配置信息是否填写正确: {:?}.",
-            config_dir.join(CONFIG_TOML_FILE)
+            "LLM Base Url 为空, 请检查配置信息是否填写正确: {}.",
+            config_dir.join(CONFIG_TOML_FILE).display()
         ))?
     }
 

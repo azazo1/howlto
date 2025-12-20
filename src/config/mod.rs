@@ -6,6 +6,9 @@ use tokio::fs;
 
 pub mod profile;
 
+#[cfg(windows)]
+pub const DEFAULT_CONFIG_DIR: &str = "~\\.config\\howlto\\";
+#[cfg(unix)]
 pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
 pub const PROFILES_TOML_FILE: &str = "profiles.toml";
 pub const CONFIG_TOML_FILE: &str = "config.toml";
