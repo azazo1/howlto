@@ -1,6 +1,6 @@
 use std::{io, path::Path};
-use tracing::level_filters::LevelFilter;
 use tracing::Metadata;
+use tracing::level_filters::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_indicatif::IndicatifLayer;
@@ -31,7 +31,7 @@ fn stderr_filter(metadata: &Metadata) -> bool {
 }
 
 /// 初始化日志输出
-/// fixme: 在 windows 某些 terminal 中颜色代码一开始是乱码.
+/// fixme: 在 windows 某些旧版的 terminal 中颜色代码一开始是乱码.
 pub async fn init(
     config_dir: impl AsRef<Path>,
     stderr: bool,

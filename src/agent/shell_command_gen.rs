@@ -195,7 +195,12 @@ fn is_potentially_invalid_command(s: impl AsRef<str>) -> bool {
 }
 
 impl ScgAgent {
-    #[tracing::instrument(name = "ShellCommandGenAgent", level = "info", skip(profile, config))]
+    #[tracing::instrument(
+        name = "ShellCommandGenAgent",
+        level = "info",
+        skip(profile, config, shell),
+        fields(shell = shell.name())
+    )]
     pub fn new(
         os: String,
         shell: &Shell,
