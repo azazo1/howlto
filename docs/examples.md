@@ -8,6 +8,7 @@ howlto docker build Dockerfile_nushell to name howlto-nushell
 howlto docker run howlto-nushell with oneshot
 howlto zip . to a.zip and dont delete any file, exclude ./target/
 howlto list zip a.zip
+howlto ls only files with time asc
 ```
 
 ## 通过管道提供辅助信息
