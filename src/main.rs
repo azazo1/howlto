@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         println!(
             "{}",
             shell.init().ok_or(anyhow::anyhow!(
-                "Shell integration for {} is not implemented",
+                "为 Shell {} 的集成脚本未实现",
                 shell.name()
             ))??
         );
