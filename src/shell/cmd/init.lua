@@ -39,6 +39,9 @@ local function on_filter_input(input_buffer)
             is_howl = true
             break
         end
+    elseif line == "howlto" then
+        args = ""
+        is_howl = true
     elseif line:match("^howlto%s+") then
         args = line:match("^howlto%s+(.*)")
         is_howl = true
