@@ -13,6 +13,7 @@ mod init_scripts {
     const BASH: &str = include_str!("bash/init.bash");
     const ZSH: &str = include_str!("zsh/init.zsh");
     const NUSHELL: &str = include_str!("nushell/init.nu");
+    const CMD: &str = include_str!("cmd/init.lua");
 
     fn init_script(template: &str) -> Result<String> {
         // shell 函数 __howlto_invoke
@@ -46,6 +47,10 @@ mod init_scripts {
     pub(crate) fn nushell() -> Result<String> {
         init_script(NUSHELL)
     }
+
+    pub(crate) fn cmd() -> Result<String> {
+        init_script(CMD)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +76,12 @@ impl FromStr for Integration {
             "bash" => Ok(Bash),
             "zsh" => Ok(Zsh),
             "nu" => Ok(Nushell),
-            // todo 增加其他 shell 的支持
+            "cmd" => Ok(Cmd),
+            "pwsh" => Ok(Pwsh),
+            // todo 判断这些名称是否正确.
+            "powershell" => Ok(PowerShell),
+            "elvish" => Ok(Elvish),
+            "xonsh" => Ok(Xonsh),
             _ => Err(()),
         }
     }
@@ -80,11 +90,11 @@ impl FromStr for Integration {
 impl Integration {
     fn init(self) -> Result<String> {
         match self {
-            Self::Fish => Ok(init_scripts::fish()?),
-            Self::Bash => Ok(init_scripts::bash()?),
-            Self::Zsh => Ok(init_scripts::zsh()?),
-            Self::Nushell => Ok(init_scripts::nushell()?),
-            Self::Cmd => todo!(),
+            Self::Fish => init_scripts::fish(),
+            Self::Bash => init_scripts::bash(),
+            Self::Zsh => init_scripts::zsh(),
+            Self::Nushell => init_scripts::nushell(),
+            Self::Cmd => init_scripts::cmd(),
             Self::PowerShell => todo!(),
             Self::Pwsh => todo!(),
             Self::Elvish => todo!(),
