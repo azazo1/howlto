@@ -157,3 +157,23 @@ async fn run_internal(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use crate::tui::command_helper::select::{Action, ActionKind};
+
+    #[tokio::test]
+    async fn tui() {
+        println!("Manually select 3 with Copy action:");
+        let action = super::select::App::select(["1", "2", "3"].into())
+            .await
+            .unwrap();
+        assert_eq!(
+            action,
+            Some(Action {
+                kind: ActionKind::PrintToInputBuffer,
+                command: "3".to_string()
+            })
+        );
+    }
+}

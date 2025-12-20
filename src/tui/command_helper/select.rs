@@ -40,7 +40,7 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Action {
     pub kind: ActionKind,
     pub command: String,
