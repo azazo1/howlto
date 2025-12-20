@@ -10,6 +10,8 @@ pub mod profile;
 pub const DEFAULT_CONFIG_DIR: &str = "~\\.config\\howlto\\";
 #[cfg(unix)]
 pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
+#[cfg(all(not(unix), not(windows)))]
+compile_error!("OS not supported.");
 pub const PROFILES_TOML_FILE: &str = "profiles.toml";
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 

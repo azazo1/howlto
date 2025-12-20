@@ -31,6 +31,7 @@ fn stderr_filter(metadata: &Metadata) -> bool {
 }
 
 /// 初始化日志输出
+/// fixme: 在 windows 某些 terminal 中颜色代码一开始是乱码.
 pub async fn init(
     config_dir: impl AsRef<Path>,
     stderr: bool,

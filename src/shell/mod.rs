@@ -28,6 +28,7 @@ mod init_scripts {
                     }
                 })?
                 .to_string_lossy()
+                .replace('\\', "/")
                 .as_ref(),
         ))
     }
@@ -76,10 +77,11 @@ impl FromStr for Integration {
             "bash" => Ok(Bash),
             "zsh" => Ok(Zsh),
             "nu" => Ok(Nushell),
-            "cmd" => Ok(Cmd),
-            "pwsh" => Ok(Pwsh),
+            "nu.exe" => Ok(Nushell),
+            "cmd.exe" => Ok(Cmd),
+            "pwsh.exe" => Ok(Pwsh),
             // todo 判断这些名称是否正确.
-            "powershell" => Ok(PowerShell),
+            "powershell.exe" => Ok(PowerShell),
             "elvish" => Ok(Elvish),
             "xonsh" => Ok(Xonsh),
             _ => Err(()),
