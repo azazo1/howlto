@@ -98,7 +98,7 @@ impl Tool for Help {
         let start_line = args.start_line;
         let read_lines = args.read_lines;
         Ok(format!(
-            "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
+            "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
             read_lines + start_line - 1,
             String::from_utf8_lossy(&output.stdout)
@@ -244,7 +244,7 @@ impl Tool for Man {
         let start_line = args.start_line;
         let read_lines = args.read_lines;
         Ok(format!(
-            "stdout(line: {0}-{1}):\n{2}\nstderr(line: {0}-{1}):\n{3}",
+            "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
             read_lines + start_line - 1,
             stdout
