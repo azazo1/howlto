@@ -14,7 +14,7 @@ end
 local function invoke_howlto(args)
     local tmp_file = os.getenv("TEMP") .. "\\howlto_" .. os.getenv("RANDOM") .. ".tmp"
     -- 注意: 需要小心处理 args 中的引号，这里做简单处理
-    local cmd = string.format('""%s" %s --htcmd-file="%s""', HOWLTO_EXE, args, tmp_file)
+    local cmd = string.format('""%s" --htcmd-file="%s" %s"', HOWLTO_EXE, args, tmp_file)
     -- clink.print(cmd)
     local success = os.execute(cmd)
     if success then

@@ -1,7 +1,7 @@
 function __howlto_invoke() {
     local program="__howlto_path__"
     local tmp=$(mktemp -t "howlto-tmp.XXXXXX")
-    $program "$@" --htcmd-file="$tmp"
+    $program --htcmd-file="$tmp" "$@"
     local exit_status=$?
     if [ $exit_status -ne 0 ]; then
         rm -f -- "$tmp"

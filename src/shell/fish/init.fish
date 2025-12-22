@@ -1,7 +1,7 @@
 function __howlto_invoke --description 'howlto with shell integration'
     set program __howlto_path__
     set tmp (mktemp -t "howlto-tmp.XXXXXX")
-    "$program" $argv --htcmd-file="$tmp"
+    "$program" --htcmd-file="$tmp" $argv
     if [ $status != 0 ]
         rm -f -- "$tmp"
         return $status

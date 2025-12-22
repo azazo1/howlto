@@ -2,7 +2,7 @@ def __howlto_invoke [...args] {
     let program = "__howlto_path__"
     let tmp = (mktemp -t "howlto-tmp.XXXXXX")
     try {
-        ^$program ...$args --htcmd-file $tmp
+        ^$program --htcmd-file $tmp ...$args
     } catch {
         rm -f $tmp
         error make {msg: "Failed", label: {text: "Failed to execute howlto", span: (metadata $fail).span}}
