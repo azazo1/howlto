@@ -23,6 +23,10 @@ mod select;
 
 const MINIMUM_TUI_WIDTH: usize = 45;
 
+fn detect_os() -> String {
+    sysinfo::System::name().unwrap_or(std::env::consts::OS.to_string())
+}
+
 async fn execute(command: String, shell_path: impl AsRef<Path>) -> Result<()> {
     let mut child = tokio::process::Command::new(shell_path.as_ref())
         .arg("-c")
@@ -118,7 +122,7 @@ async fn run_internal(
 ) -> Result<()> {
     let agent = ScgAgent::builder()
         .profile(profiles.shell_command_gen.clone())
-        .os(std::env::consts::OS.to_string())
+        .os(detect_os())
         .shell(shell)
         .config(config)
         .build()?;
