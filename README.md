@@ -95,6 +95,9 @@ shell 集成之后, 可以使用以下 features:
 
 只有 macOS Apple Silicon 被测试运行过, 其他平台上的使用如遇问题欢迎提出 issues.
 
+虽然该工具可在 Windows 环境下运行, 但在 Unix 系统 (如 macOS 或 Linux) 中的表现更为出色.
+为了获得最佳交互体验, 强烈建议在 Unix 系统配合 fish shell 使用.
+
 ## Referencing
 
 - ⭐[TheR1D/shell_gpt](https://github.com/TheR1D/shell_gpt): howlto is inspired by this repo.
