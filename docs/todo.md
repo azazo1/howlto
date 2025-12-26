@@ -13,9 +13,12 @@
 - [x] 添加根据上次输入命令自动修正命令, 和 `howlto -- git push -up origin main` -> `git push -u origin main` 这样的命令自动修正功能.
 - [x] 测试 gpt-4.1-nano 模型 (结果目测不如 gpt-4o-mini).
 - [x] indicatif 实时显示模型输出在一行.
+- [x] 减小构建大小.
 
 ## 👨‍💻 Progressing
 
+- [ ] 给每个输出的命令一个简短的 description (finish tool 要改名).
+- [ ] 在 Windows shell 下可能会检测到第一个 Enter, 是由于执行命令产生的, 应该忽略.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.
@@ -44,7 +47,8 @@
 - [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
 - [ ] linux 下补充发行版在 os 字段.
 - [ ] shell 集成快捷键, 绑定某个快捷键将输入内容描述替换成命令 (强制 command gen profile).
-- [ ] 减小构建大小.
+- [ ] tree 工具, 列出本地文件结构命令.
+- [ ] project status 工具, 给 agent 提供当前文件夹下的项目状态, 比如 rust editon, git branch 等, 需要支持各种语言.
 
 ## ❌ Cancelled
 
