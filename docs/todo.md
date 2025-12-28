@@ -49,6 +49,7 @@
 - [ ] shell 集成快捷键, 绑定某个快捷键将输入内容描述替换成命令 (强制 command gen profile).
 - [ ] tree 工具, 列出本地文件结构命令.
 - [ ] project status 工具, 给 agent 提供当前文件夹下的项目状态, 比如 rust editon, git branch 等, 需要支持各种语言.
+- [ ] 收藏夹功能, 收藏某个命令, 活着收藏某个命令的思路, 让 Agent 根据收藏项及其描述来生成命令.
 
 ## ❌ Cancelled
 
