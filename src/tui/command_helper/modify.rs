@@ -1,4 +1,7 @@
-use std::io;
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
@@ -120,6 +123,10 @@ impl App {
                 }
             };
         }
+
+        // 在 windows 某些终端中会将执行命令的回车键也监听到, 因此忽略这个事件.
+        let start_time = Instant::now();
+        let skip_enter_duration = Duration::from_millis(10);
         tokio::spawn(async move {
             let mut event_stream = crossterm::event::EventStream::new();
             while let Some(evt) = event_stream.next().await {
@@ -132,7 +139,9 @@ impl App {
                         }
                         KeyCode::Esc => send!(AppEvent::Quit),
                         KeyCode::Enter => {
-                            send!(AppEvent::Confirm)
+                            if start_time.elapsed() > skip_enter_duration {
+                                send!(AppEvent::Confirm)
+                            }
                         }
                         _ => send!(AppEvent::Key(evt.unwrap())),
                     },
