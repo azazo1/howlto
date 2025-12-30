@@ -7,7 +7,7 @@ use crate::{
     error::{Error, Result},
     tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
 };
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     Viewport, crossterm,
     layout::{Constraint, Layout},
@@ -158,39 +158,43 @@ impl App {
             let mut event_stream = crossterm::event::EventStream::new();
             while let Some(evt) = event_stream.next().await {
                 match evt {
-                    Ok(Event::Key(kevt)) => match kevt.code {
-                        KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w')
-                            if kevt.modifiers.is_empty() =>
-                        {
-                            send!(AppEvent::Up);
-                        }
-                        KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s')
-                            if kevt.modifiers.is_empty() =>
-                        {
-                            send!(AppEvent::Down);
-                        }
-                        KeyCode::Esc | KeyCode::Char('q') if kevt.modifiers.is_empty() => {
-                            send!(AppEvent::Quit);
-                        }
-                        KeyCode::Char('c') if kevt.modifiers == KeyModifiers::CONTROL => {
-                            send!(AppEvent::Quit);
-                        }
-                        KeyCode::Char('c') if kevt.modifiers.is_empty() => {
-                            send!(AppEvent::C);
-                        }
-                        KeyCode::Char('m') if kevt.modifiers.is_empty() => {
-                            send!(AppEvent::M);
-                        }
-                        KeyCode::Char('e') if kevt.modifiers.is_empty() => {
-                            send!(AppEvent::E);
-                        }
-                        KeyCode::Enter if kevt.modifiers.is_empty() => {
-                            if start_time.elapsed() > skip_enter_duration {
-                                send!(AppEvent::Enter);
+                    Ok(Event::Key(kevt))
+                        if matches!(kevt.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
+                    {
+                        match kevt.code {
+                            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w')
+                                if kevt.modifiers.is_empty() =>
+                            {
+                                send!(AppEvent::Up);
                             }
+                            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s')
+                                if kevt.modifiers.is_empty() =>
+                            {
+                                send!(AppEvent::Down);
+                            }
+                            KeyCode::Esc | KeyCode::Char('q') if kevt.modifiers.is_empty() => {
+                                send!(AppEvent::Quit);
+                            }
+                            KeyCode::Char('c') if kevt.modifiers == KeyModifiers::CONTROL => {
+                                send!(AppEvent::Quit);
+                            }
+                            KeyCode::Char('c') if kevt.modifiers.is_empty() => {
+                                send!(AppEvent::C);
+                            }
+                            KeyCode::Char('m') if kevt.modifiers.is_empty() => {
+                                send!(AppEvent::M);
+                            }
+                            KeyCode::Char('e') if kevt.modifiers.is_empty() => {
+                                send!(AppEvent::E);
+                            }
+                            KeyCode::Enter if kevt.modifiers.is_empty() => {
+                                if start_time.elapsed() > skip_enter_duration {
+                                    send!(AppEvent::Enter);
+                                }
+                            }
+                            _ => (),
                         }
-                        _ => (),
-                    },
+                    }
                     Err(e) => {
                         send!(AppEvent::Err(e));
                     }
