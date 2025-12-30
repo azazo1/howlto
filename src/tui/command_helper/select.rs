@@ -1,14 +1,13 @@
-use std::io::{self, Stderr};
+use std::io;
 
 use crate::{
     error::{Error, Result},
-    tui::command_helper::MINIMUM_TUI_WIDTH,
+    tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
 };
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
-    Terminal, Viewport, crossterm,
+    Viewport, crossterm,
     layout::{Constraint, Layout},
-    prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, BorderType, List, ListItem, ListState, Padding, StatefulWidget, Widget},
@@ -60,7 +59,7 @@ struct AppWidget {
 }
 
 pub struct App {
-    terminal: Terminal<CrosstermBackend<Stderr>>,
+    terminal: InlineTerminal,
     widget: AppWidget,
 }
 
@@ -75,15 +74,6 @@ enum AppEvent {
     E,
     Err(io::Error),
     // todo 添加一个 tab 直接粘贴到下一个 shell 输入中, 可能需要 shell 集成脚本.
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        // ratatui::restore(); // ratatui::restore() 对 Inline 的恢复效果不好.
-        self.terminal.clear().ok();
-        self.terminal.show_cursor().ok();
-        crossterm::terminal::disable_raw_mode().ok();
-    }
 }
 
 impl Widget for &mut AppWidget {
@@ -238,15 +228,10 @@ impl App {
     }
 
     fn new(items: Vec<Item>) -> io::Result<App> {
-        crossterm::terminal::enable_raw_mode()?;
-        let backend: CrosstermBackend<Stderr> = CrosstermBackend::new(io::stderr());
-        let terminal = Terminal::with_options(
-            backend,
-            ratatui::TerminalOptions {
-                // (border:2) + (hints:2)+ (items.len())
-                viewport: Viewport::Inline(4 + items.len() as u16),
-            },
-        )?;
+        let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
+            // (border:2) + (hints:2)+ (items.len())
+            viewport: Viewport::Inline(4 + items.len() as u16),
+        })?;
         let mut list_state = ListState::default();
         list_state.select_first();
         Ok(App {

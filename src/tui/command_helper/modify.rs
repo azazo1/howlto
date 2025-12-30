@@ -1,11 +1,10 @@
-use std::io::{self, Stderr};
+use std::io;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
-    Terminal, Viewport,
+    Viewport,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
-    prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, BorderType, Widget},
@@ -18,7 +17,10 @@ use tokio_stream::StreamExt;
 use tui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{error::Result, tui::command_helper::MINIMUM_TUI_WIDTH};
+use crate::{
+    error::Result,
+    tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
+};
 
 const TITLE: &str = "Modify Prompt";
 const TITLE_STYLE: Style = Style::new()
@@ -34,7 +36,7 @@ const INPUT_STYLE: Style = Style::new();
 
 #[derive(Debug)]
 pub struct App {
-    terminal: Terminal<CrosstermBackend<Stderr>>,
+    terminal: InlineTerminal,
     widget: AppWidget,
 }
 
@@ -92,24 +94,11 @@ impl Widget for &AppWidget {
     }
 }
 
-impl Drop for App {
-    fn drop(&mut self) {
-        self.terminal.clear().ok();
-        self.terminal.show_cursor().ok();
-        crossterm::terminal::disable_raw_mode().ok();
-    }
-}
-
 impl App {
     pub fn new(command: String) -> Result<Self> {
-        crossterm::terminal::enable_raw_mode()?;
-        let backend: CrosstermBackend<Stderr> = CrosstermBackend::new(io::stderr());
-        let terminal = Terminal::with_options(
-            backend,
-            ratatui::TerminalOptions {
-                viewport: Viewport::Inline(7),
-            },
-        )?;
+        let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
+            viewport: Viewport::Inline(7),
+        })?;
         let mut text_area = TextArea::default();
         text_area.set_block(
             Block::bordered()
