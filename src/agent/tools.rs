@@ -3,7 +3,7 @@ use std::{io::ErrorKind, path::PathBuf, process::Stdio};
 use rig::{completion::ToolDefinition, tool::Tool};
 use serde::Deserialize;
 use serde_json::json;
-use tokio::io::{self, AsyncReadExt};
+use tokio::io;
 use tracing::debug;
 
 fn default_start_line() -> usize {
@@ -224,35 +224,40 @@ impl Tool for Man {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child1 = command1.spawn()?;
         command2
             .arg("-b")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
+
+        debug!(target: "tool-man", "Calling command {:?} | {:?}...", command1, command2);
+
+        let mut child1 = command1.spawn()?;
         let mut child2 = command2.spawn()?;
         tokio::io::copy(
             &mut child1.stdout.take().unwrap(),
             &mut child2.stdin.take().unwrap(),
         )
         .await?;
-        debug!(target: "tool-man", "Calling command {:?} | {:?}...", command1, command2);
+        let mut stderr = Vec::new();
+        tokio::io::copy(child1.stderr.as_mut().unwrap(), &mut stderr).await?;
+
+        // 这里要边调用边读取其输出, 不然过长的内容会导致子程序认为输出缓冲区满了停止输出, 进入等待, 导致死锁.
+        let mut stdout = Vec::new();
+        tokio::io::copy(child2.stdout.as_mut().unwrap(), &mut stdout).await?;
+
         child2.wait().await?;
-        let mut stderr = String::new();
-        let mut stdout = String::new();
-        child1.stderr.unwrap().read_to_string(&mut stderr).await?;
-        child2.stdout.unwrap().read_to_string(&mut stdout).await?;
         let start_line = args.start_line;
         let read_lines = args.read_lines;
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
             read_lines + start_line - 1,
-            stdout
+            String::from_utf8_lossy(&stdout)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
                 .collect::<String>(),
-            stderr
+            String::from_utf8_lossy(&stderr)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
@@ -441,5 +446,30 @@ impl Tool for FinishResponse {
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         // 在 stream_prompt 的输出被监听.
         Ok("ok".into())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rig::tool::Tool;
+    use tracing::Level;
+
+    use crate::agent::tools::{Man, ManArgs};
+
+    #[tokio::test]
+    async fn man() {
+        tracing_subscriber::fmt()
+            .with_max_level(Level::DEBUG)
+            .init();
+        let man = Man;
+        // 需要使用类似 ffmpeg 或者其他 man 内容过长的内容进行测试, 测试会不会进入死锁.
+        man.call(ManArgs {
+            entry: "ffmpeg".to_string(),
+            read_lines: 50,
+            section: None,
+            start_line: 0,
+        })
+        .await
+        .unwrap();
     }
 }
