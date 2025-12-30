@@ -144,9 +144,9 @@ impl Widget for &mut AppWidget {
 
 impl App {
     fn start_handling_events(&self, tx: UnboundedSender<AppEvent>) -> JoinHandle<()> {
-        macro_rules! break_on_error {
+        macro_rules! send {
             ($s:expr) => {
-                if $s.is_err() {
+                if tx.send($s).is_err() {
                     break;
                 }
             };
@@ -162,37 +162,37 @@ impl App {
                         KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(AppEvent::Up));
+                            send!(AppEvent::Up);
                         }
                         KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s')
                             if kevt.modifiers.is_empty() =>
                         {
-                            break_on_error!(tx.send(AppEvent::Down));
+                            send!(AppEvent::Down);
                         }
                         KeyCode::Esc | KeyCode::Char('q') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::Quit));
+                            send!(AppEvent::Quit);
                         }
                         KeyCode::Char('c') if kevt.modifiers == KeyModifiers::CONTROL => {
-                            break_on_error!(tx.send(AppEvent::Quit));
+                            send!(AppEvent::Quit);
                         }
                         KeyCode::Char('c') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::C));
+                            send!(AppEvent::C);
                         }
                         KeyCode::Char('m') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::M));
+                            send!(AppEvent::M);
                         }
                         KeyCode::Char('e') if kevt.modifiers.is_empty() => {
-                            break_on_error!(tx.send(AppEvent::E));
+                            send!(AppEvent::E);
                         }
                         KeyCode::Enter if kevt.modifiers.is_empty() => {
                             if start_time.elapsed() > skip_enter_duration {
-                                break_on_error!(tx.send(AppEvent::Enter));
+                                send!(AppEvent::Enter);
                             }
                         }
                         _ => (),
                     },
                     Err(e) => {
-                        break_on_error!(tx.send(AppEvent::Err(e)));
+                        send!(AppEvent::Err(e));
                     }
                     _ => {}
                 }
