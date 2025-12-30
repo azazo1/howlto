@@ -14,11 +14,11 @@
 - [x] 测试 gpt-4.1-nano 模型 (结果目测不如 gpt-4o-mini).
 - [x] indicatif 实时显示模型输出在一行.
 - [x] 减小构建大小.
+- [x] 在 Windows shell 下可能会检测到第一个 Enter, 是由于执行命令产生的, 应该忽略.
 
 ## 👨‍💻 Progressing
 
 - [ ] 给每个输出的命令一个简短的 description (finish tool 要改名).
-- [ ] 在 Windows shell 下可能会检测到第一个 Enter, 是由于执行命令产生的, 应该忽略.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.
