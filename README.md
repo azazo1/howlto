@@ -97,6 +97,7 @@ shell 集成之后, 可以使用以下 features:
 
 虽然该工具可在 Windows 环境下运行, 但在 Unix 系统 (如 macOS 或 Linux) 中的表现更为出色.
 为了获得最佳交互体验, 强烈建议在 Unix 系统配合 fish shell 使用.
+Windows 可以在 [WSL](https://learn.microsoft.com/zh-cn/windows/wsl/install) 下使用获取最佳的使用体验.
 
 ## Referencing
 
