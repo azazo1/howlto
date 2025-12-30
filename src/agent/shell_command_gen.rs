@@ -25,7 +25,7 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_indicatif::style::ProgressStyle;
 use unicode_width::UnicodeWidthChar;
 
-const MULTI_TURN: usize = 20;
+const MULTI_TURN: usize = 100;
 
 /// 盲文 spinner, \u28xx, xx 为 00~ff, 按位顺序从右到左分别表示盲文点: 左上, 左中, 左下, 右上, 右中, 右下, 左底, 右底.
 /// 其中最后两个点如果w位都是 0 那么为六点盲文.
