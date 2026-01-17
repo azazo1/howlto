@@ -126,11 +126,19 @@ impl Widget for &mut AppWidget {
                     .enumerate()
                     .map(|(idx, x)| {
                         let width = list_area.width;
-                        let selected =
-                            matches!(self.list_state.selected(), Some(selected) if selected.clamp(0, self.items.len() - 1) == idx);
-                        let prefix = if selected { Span::from("> ") } else {
+                        let selected = if let Some(selected) = self.list_state.selected()
+                            && selected.clamp(0, self.items.len() - 1) == idx
+                        {
+                            true
+                        } else {
+                            false
+                        };
+                        let prefix = if selected {
+                            Span::from("> ")
+                        } else {
                             Span::from("  ")
-                        }.fg(Color::LightCyan);
+                        }
+                        .fg(Color::LightCyan);
                         let content = x.content.as_str();
                         let desc = x.desc.as_str();
                         if self.should_line_break(width as usize - 2, 2, content, desc) {
@@ -147,7 +155,7 @@ impl Widget for &mut AppWidget {
                             let left = if selected {
                                 Span::from(content).fg(Color::LightCyan)
                             } else {
-                                    content.into()
+                                content.into()
                             };
                             let right = Span::from(desc).dark_gray();
                             // 分别左右对齐.
