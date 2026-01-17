@@ -402,10 +402,16 @@ impl Tool for TheFuck {
 /// 结束输出, 给定输出结果
 pub struct FinishResponse;
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FinishResponseItem {
+    pub content: String,
+    pub desc: String,
+}
+
 /// 输出结果
 #[derive(serde::Deserialize)]
 pub struct FinishResponseArgs {
-    pub results: Vec<String>,
+    pub results: Vec<FinishResponseItem>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -431,8 +437,19 @@ impl Tool for FinishResponse {
                     "results": {
                         "type": "array",
                         "items": {
-                            "type": "string",
-                            "description": "One item of the response."
+                            "type": "object",
+                            "description": "One item of the response.",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "The content of the response.",
+                                },
+                                "desc": {
+                                    "type": "string",
+                                    "description": "Simple description of the content. Few words would be enough."
+                                }
+                            },
+                            "required": ["content", "desc"]
                         },
                         "description": "A list of string segments that collectively form the complete, \
                             formatted final answer to the user's request."

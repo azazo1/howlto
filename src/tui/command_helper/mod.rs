@@ -133,7 +133,15 @@ async fn run_internal(
         .call()
         .await?;
     if plain {
-        println!("{}", response.commands.join("\n"));
+        println!(
+            "{}",
+            response
+                .commands
+                .iter()
+                .map(|x| x.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     } else if !response.commands.is_empty() {
         let mut response = response;
         loop {
@@ -164,14 +172,33 @@ async fn run_internal(
 
 #[cfg(test)]
 mod test {
-    use crate::tui::command_helper::select::{Action, ActionKind};
+    use crate::{
+        agent::tools::FinishResponseItem,
+        tui::command_helper::select::{Action, ActionKind},
+    };
 
     #[tokio::test]
     async fn tui() {
         println!("Manually select 3 with Copy action:");
-        let action = super::select::App::select(["1", "2", "3"].into())
-            .await
-            .unwrap();
+        let action = super::select::App::select(
+            [
+                FinishResponseItem {
+                    content: "1".into(),
+                    desc: "This is one.".into(),
+                },
+                FinishResponseItem {
+                    content: "2".into(),
+                    desc: "This is two, which is one plus one.".into(),
+                },
+                FinishResponseItem {
+                    content: "3".into(),
+                    desc: "This is three, which is one plus two.\nThat is to say one plus one plus one.".into(),
+                },
+            ]
+            .into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             action,
             Some(Action {

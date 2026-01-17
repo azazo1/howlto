@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::agent::tools::{FinishResponse, FinishResponseArgs, Help, Man, TheFuck, Tldr};
+use crate::agent::tools::{
+    FinishResponse, FinishResponseArgs, FinishResponseItem, Help, Man, TheFuck, Tldr,
+};
 use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
@@ -124,7 +126,7 @@ pub struct ScgAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要执行的命令.
-    pub commands: Vec<String>,
+    pub commands: Vec<FinishResponseItem>,
 }
 
 #[derive(Debug)]
@@ -185,8 +187,8 @@ fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
     }
 }
 
-fn is_potentially_invalid_command(s: impl AsRef<str>) -> bool {
-    let s = s.as_ref();
+fn is_potentially_invalid_command(s: &FinishResponseItem) -> bool {
+    let s = s.content.as_str();
     if let Some(ch) = s.chars().next() {
         !ch.is_ascii() && which::which(Path::new(s)).is_err()
     } else {
@@ -443,7 +445,12 @@ impl ScgAgent {
                 .prompt(
                     self.profile
                         .check_help(if let Some(commands) = &status.commands {
-                            commands.results.join("\n")
+                            commands
+                                .results
+                                .iter()
+                                .map(|x| x.content.as_str())
+                                .collect::<Vec<_>>()
+                                .join("\n")
                         } else {
                             String::new()
                         })
@@ -466,7 +473,17 @@ impl ScgAgent {
                 .stream_chat()
                 .span_title("Checking Valid")
                 .history(history.clone())
-                .prompt(self.profile.check_valid(results.join("\n")).fmt())
+                .prompt(
+                    self.profile
+                        .check_valid(
+                            results
+                                .iter()
+                                .map(|x| x.content.as_str())
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        )
+                        .fmt(),
+                )
                 .call()
                 .await
         {

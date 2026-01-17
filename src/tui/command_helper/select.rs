@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    agent::tools::FinishResponseItem,
     error::{Error, Result},
     tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
 };
@@ -27,22 +28,6 @@ const HINT2: &str = "e: execute | enter: place to input | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 
-#[derive(Debug, Clone)]
-pub struct Item {
-    pub command: String,
-}
-
-impl<T> From<T> for Item
-where
-    T: Into<String>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            command: value.into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Action {
     pub kind: ActionKind,
@@ -58,7 +43,7 @@ pub enum ActionKind {
 }
 
 struct AppWidget {
-    items: Vec<Item>,
+    items: Vec<FinishResponseItem>,
     list_state: ListState,
 }
 
@@ -79,22 +64,42 @@ enum AppEvent {
     Err(io::Error),
 }
 
-impl Widget for &mut AppWidget {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-        let width = self
-            .items
+impl AppWidget {
+    #[inline]
+    #[must_use]
+    fn calc_width(&self) -> u16 {
+        self.items
             .iter()
-            .map(|x| x.command.width_cjk() + 5)
+            .map(|x| x.desc.width_cjk().max(x.content.width_cjk()) + 5)
             .max()
             .unwrap_or(0)
             .max(TITLE.width_cjk() + 5)
             .max(HINT1.width_cjk() + 5)
             .max(HINT2.width_cjk() + 5)
-            .max(MINIMUM_TUI_WIDTH);
-        let [block_area] = Layout::horizontal([Constraint::Length(width as u16)]).areas(area);
+            .max(MINIMUM_TUI_WIDTH) as u16
+    }
+
+    /// 判断 命令-描述 对是否需要分行.
+    /// # Parameters
+    /// - `width`: 渲染宽度.
+    /// - `gap`: content 和 desc 之间的最小间隔.
+    /// - `content`, `desc`: 命令-描述 对.
+    fn should_line_break(&self, width: usize, gap: usize, content: &str, desc: &str) -> bool {
+        // 只有两个都是单行的时候才能不分行.
+        if content.lines().count() + desc.lines().count() > 2 {
+            return true;
+        }
+        content.width_cjk() + desc.width_cjk() + gap > width
+    }
+}
+
+impl Widget for &mut AppWidget {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let width = self.calc_width();
+        let [block_area] = Layout::horizontal([Constraint::Length(width)]).areas(area);
         let block = Block::bordered()
             .padding(Padding::horizontal(1))
             .border_style(BORDER_STYLE)
@@ -118,11 +123,45 @@ impl Widget for &mut AppWidget {
             List::new(
                 self.items
                     .iter()
-                    .map(|x| Text::from(x.command.as_str()))
+                    .enumerate()
+                    .map(|(idx, x)| {
+                        let width = list_area.width;
+                        let selected =
+                            matches!(self.list_state.selected(), Some(selected) if selected.clamp(0, self.items.len() - 1) == idx);
+                        let prefix = if selected { Span::from("> ") } else {
+                            Span::from("  ")
+                        }.fg(Color::LightCyan);
+                        let content = x.content.as_str();
+                        let desc = x.desc.as_str();
+                        if self.should_line_break(width as usize - 2, 2, content, desc) {
+                            let mut text = if selected {
+                                Text::from(prefix + content.into()).fg(Color::LightCyan)
+                            } else {
+                                Text::from(prefix + content.into())
+                            };
+                            text.extend(desc.lines().map(|line| {
+                                Line::from(line).alignment(Alignment::Right).dark_gray()
+                            }));
+                            text
+                        } else {
+                            let left = if selected {
+                                Span::from(content).fg(Color::LightCyan)
+                            } else {
+                                    content.into()
+                            };
+                            let right = Span::from(desc).dark_gray();
+                            // 分别左右对齐.
+                            let spaces = Span::raw(
+                                " ".repeat(
+                                    ((width - 2) as usize)
+                                        .saturating_sub(content.width_cjk() + desc.width_cjk()),
+                                ),
+                            );
+                            Text::from(Line::from_iter([prefix, left, spaces, right]))
+                        }
+                    })
                     .map(ListItem::from),
-            )
-            .highlight_symbol("> ")
-            .highlight_style(Style::new().fg(Color::LightCyan)),
+            ),
             list_area,
             buf,
             &mut self.list_state,
@@ -202,7 +241,7 @@ impl App {
 
     fn action_result(&self, kind: ActionKind) -> Option<Action> {
         if let Some(sel) = self.widget.list_state.selected() {
-            let command = self.widget.items.get(sel).map(|x| x.command.clone());
+            let command = self.widget.items.get(sel).map(|x| x.content.clone());
             command.map(|command| Action { command, kind })
         } else {
             None
@@ -235,30 +274,42 @@ impl App {
         Ok(rst?)
     }
 
-    fn new(items: Vec<Item>) -> io::Result<App> {
-        dbg!(&items);
+    fn new(items: Vec<FinishResponseItem>) -> io::Result<App> {
+        let mut list_state = ListState::default();
+        list_state.select_first();
+        let widget = AppWidget { items, list_state };
         let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
             // (border:2) + (hints:2)+ (items.len())
             viewport: Viewport::Inline(
-                4 + items
+                4 + widget
+                    .items
                     .iter()
-                    .map(|x| x.command.lines().count())
+                    .map(|x| {
+                        if widget.should_line_break(
+                            // -2: List widget 的高亮 symbol 宽度.
+                            widget.calc_width() as usize - 2,
+                            2,
+                            x.content.as_str(),
+                            x.desc.as_str(),
+                        ) {
+                            // 分行.
+                            x.content.lines().count() + x.desc.lines().count()
+                        } else {
+                            // 不分行.
+                            1
+                        }
+                    })
                     .sum::<usize>() as u16,
             ),
         })?;
-        let mut list_state = ListState::default();
-        list_state.select_first();
-        Ok(App {
-            terminal,
-            widget: AppWidget { items, list_state },
-        })
+        Ok(App { terminal, widget })
     }
 
-    pub async fn select(items: Vec<impl Into<Item>>) -> Result<Option<Action>> {
+    pub async fn select(items: Vec<FinishResponseItem>) -> Result<Option<Action>> {
         if items.is_empty() {
             return Err(Error::InvalidInput("items can't be empty".into()));
         }
-        let app = App::new(items.into_iter().map(Into::into).collect())?;
+        let app = App::new(items.into_iter().collect())?;
         app.run().await
     }
 }
