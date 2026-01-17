@@ -19,6 +19,7 @@
 ## 👨‍💻 Progressing
 
 - [ ] 给每个输出的命令一个简短的 description (finish tool 要改名).
+- [ ] 解决具有副作用的 `--help` 问题, 比如 mkdir.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.
