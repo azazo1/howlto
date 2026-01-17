@@ -11,6 +11,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     Viewport, crossterm,
     layout::{Constraint, Layout},
+    prelude::*,
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, BorderType, List, ListItem, ListState, Padding, StatefulWidget, Widget},
@@ -76,7 +77,6 @@ enum AppEvent {
     M,
     E,
     Err(io::Error),
-    // todo 添加一个 tab 直接粘贴到下一个 shell 输入中, 可能需要 shell 集成脚本.
 }
 
 impl Widget for &mut AppWidget {
@@ -118,14 +118,10 @@ impl Widget for &mut AppWidget {
             List::new(
                 self.items
                     .iter()
-                    .map(|x| {
-                        let mut inserted = x.command.clone();
-                        inserted.insert(0, ' ');
-                        inserted
-                    })
+                    .map(|x| Text::from(x.command.as_str()))
                     .map(ListItem::from),
             )
-            .highlight_symbol(">")
+            .highlight_symbol("> ")
             .highlight_style(Style::new().fg(Color::LightCyan)),
             list_area,
             buf,
@@ -240,9 +236,15 @@ impl App {
     }
 
     fn new(items: Vec<Item>) -> io::Result<App> {
+        dbg!(&items);
         let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
             // (border:2) + (hints:2)+ (items.len())
-            viewport: Viewport::Inline(4 + items.len() as u16),
+            viewport: Viewport::Inline(
+                4 + items
+                    .iter()
+                    .map(|x| x.command.lines().count())
+                    .sum::<usize>() as u16,
+            ),
         })?;
         let mut list_state = ListState::default();
         list_state.select_first();

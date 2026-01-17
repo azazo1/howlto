@@ -6,11 +6,8 @@ use std::{
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     Viewport,
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, BorderType, Widget},
+    prelude::*,
+    widgets::{Block, BorderType},
 };
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
@@ -71,8 +68,8 @@ impl Widget for &AppWidget {
             ) as u16)])
             .areas(area);
         let [command_block_area, input_area, hint_area] = Layout::vertical([
-            Constraint::Length(3),
             Constraint::Fill(1),
+            Constraint::Length(3),
             Constraint::Length(1),
         ])
         .areas(area);
@@ -92,7 +89,7 @@ impl Widget for &AppWidget {
             .title_top("")
             .title_top(Line::from(COMMAND_TITLE).style(COMMAND_TITLE_STYLE))
             .render(command_block_area, buf);
-        Line::from(self.command.clone()).render(command_area, buf);
+        Text::from(self.command.clone()).render(command_area, buf);
         self.text_area.render(input_area, buf);
     }
 }
@@ -100,7 +97,7 @@ impl Widget for &AppWidget {
 impl App {
     pub fn new(command: String) -> Result<Self> {
         let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
-            viewport: Viewport::Inline(7),
+            viewport: Viewport::Inline(6 + command.lines().count() as u16),
         })?;
         let mut text_area = TextArea::default();
         text_area.set_block(

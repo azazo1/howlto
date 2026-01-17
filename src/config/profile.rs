@@ -154,7 +154,7 @@ When you have some solutions, your commands output MUST be passed to {FINISH_RES
 You should generate {OUTPUT_N} commands, each as an item in the parameter of {FINISH_RESPONSE} tool, the more suitable, the earlier it should be.
 Ensure the commands are valid commands, without any markdown style!
 DO NOT quote arguments using ``, '', "" or anything else.
-The arguments supplied to the {FINISH_RESPONSE} tool must consist only of a single, syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions and newline characters like `\n` are strictly PROHIBITED within the command string.
+The arguments supplied to the {FINISH_RESPONSE} tool must consist only of syntactically valid shell commands, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within the command string.
 
 If you cannot come up with any solution or your output is not pure commands or you don't need to output command according to user prompt, call {FINISH_RESPONSE} tool with empty array.
 Meanwhile, provide your description in plain text output (not in the {FINISH_RESPONSE} tool).
