@@ -42,7 +42,7 @@
 - [ ] `-x` 参数直接执行第一个候选命令.
 - [ ] translate agent (stdin / text file).
 - [ ] help/man tool: 搜索特定的 pattern, 增加阅读的效率.
-- [ ] shell 内置命令 (builtin) 支持, 也许可以通过获取各个 shell 的帮助页面网页内容实现.
+- [ ] shell 内置命令 (builtin) 支持, 也许可以通过获取各个 shell 的帮助页面网页内容实现, 也可以使用 `fish -c ...` 这样的形式实现.
 - [ ] 不同的 shell 的 execute 有不同的方式.
 - [ ] 将任务根据难度分层, 对于最简单的任务, 对其不进行 check help.
 - [ ] linux 下补充发行版在 os 字段.
@@ -51,7 +51,14 @@
 - [ ] project status 工具, 给 agent 提供当前文件夹下的项目状态, 比如 rust editon, git branch 等, 需要支持各种语言.
 - [ ] 收藏夹功能, 收藏某个命令, 活着收藏某个命令的思路, 让 Agent 根据收藏项及其描述来生成命令.
 - [ ] 测试 deepseek-v3.2 模型能不能胜任.
+- [ ] tui select 对输出的多行命令进行适配显示.
+- [ ] fixme: 在使用帮助工具的时候静默执行了具有副作用的命令, 复现: `howlto --debug init go project in (pwd)`
+  - 这个可能需要解决非 `--help` cli 的问题, 可以给 help 工具添加一个 harness 参数, 默认为 `false`,
+    当为 `true` 的时候需要模型自己提供完整的帮助命令.
 
 ## ❌ Cancelled
 
 - shell 集成, 自动补全, 自动获取上一个命令的输出(这点比较难做到) (使用一个参数或者 shell 命令类似 `last_output | howlto ...` 控制这点).
+- 对于 `go get`, `pip install`, `cargo add`, `uv add` 等项目包管理器的提示进行快速通过,
+  比如 `howlto go get dotenv` 直接生成 `go get -u github.com/joho/godotenv` 而不是进行各种的检查.
+  (这样可能会让 agent 对不熟悉的包管理器胡乱使用)
