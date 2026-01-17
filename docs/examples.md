@@ -10,6 +10,7 @@ howlto zip . to a.zip and dont delete any file, exclude ./target/
 howlto list zip a.zip
 howlto ls only files with time asc
 howlto convert a.mov to a.webp with fps 10, quality 50, width 500 and height auto
+howlto git remove all reflog
 ```
 
 ## 修改
