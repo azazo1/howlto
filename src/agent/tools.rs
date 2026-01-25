@@ -446,7 +446,7 @@ impl Tool for FinishResponse {
                                 },
                                 "desc": {
                                     "type": "string",
-                                    "description": "Simple description of the content. Few words would be enough."
+                                    "description": "Simple description of the content. Few words would be enough. Describing the difference between other choices."
                                 }
                             },
                             "required": ["content", "desc"]
