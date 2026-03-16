@@ -6,6 +6,8 @@ use serde_json::json;
 use tokio::io;
 use tracing::debug;
 
+use crate::tui::dangerous_execution;
+
 fn default_start_line() -> usize {
     0
 }
@@ -46,8 +48,11 @@ impl Tool for Help {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get help of the program, don't read too many lines at a time, \
-                call this multiple times to scan for the messages you need."
+            description: "Get help of the program. \
+                As is equal to `program *subcommands --help` (simply adding --help after subcommands). \
+                If you find it cannot return the expected help messages, you can try dangerous help tools. \
+                Don't read too many lines at a time. \
+                Call this multiple times to scan for the messages you need."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -463,6 +468,108 @@ impl Tool for FinishResponse {
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         // 在 stream_prompt 的输出被监听.
         Ok("ok".into())
+    }
+}
+
+/// 获取 CLI 帮助内容, 不过不能保证执行的命令一定是安全的.
+pub struct DangerousHelp;
+
+#[derive(serde::Deserialize)]
+pub struct DangerousHelpArgs {
+    /// 要执行 `--help` 的程序, 可以使用 PATH 中的程序而不提供绝对路径.
+    program: PathBuf,
+    /// 命令参数
+    #[serde(default)]
+    args: Vec<String>,
+    /// 指定行开始返回内容, 为 [`None`] 则默认为 0 行.
+    #[serde(default = "default_start_line")]
+    start_line: usize,
+    /// 读取指定行数, 为 [`None`] 则默认为 50 行.
+    #[serde(default = "default_read_lines")]
+    read_lines: usize,
+}
+
+impl Tool for DangerousHelp {
+    const NAME: &'static str = "dangerous_help";
+
+    type Error = io::Error;
+
+    type Args = DangerousHelpArgs;
+
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name(),
+            description: "Strictly for RETRIEVING and READING CLI help documentation or manuals. \
+                DO NOT execute functional commands (e.g., do not convert files, delete data, or run tasks). \
+                Your goal is to find flags like '--help', '-h', 'help <subcommand>', or 'man'. \
+                If you need to know how to use cli, call this with '--help', '--help=topic' or any help concerning flags, \
+                NEVER call it with operational arguments. \
+                Don't read too many lines at a time, \
+                call this multiple times to scan for the messages you need."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "args": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "description": "One argument"
+                        },
+                        "description": r#"ONLY help-related flags. Examples: ['--help'], ['-h'], ['help'], ['--usage']. \
+                            Forbidden: any flags that perform actual file processing or system changes."#
+                    },
+                    "program": {
+                        "type": "string",
+                        "description": "The program path you want to get help, \
+                            program in the PATH, \
+                            relative path and absolute path are available."
+                    },
+                    "start_line": {
+                        "type": "number",
+                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                    },
+                    "read_lines": {
+                        "type": "number",
+                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                    }
+                },
+                "required": ["program"],
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        dangerous_execution::confirm_execution(&args.program, &args.args)
+            .map_err(io::Error::other)?;
+        let mut command = tokio::process::Command::new(args.program);
+        command
+            .args(args.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        debug!(target: "tool-help", "Calling command {:?}...", command);
+        let output = command.output().await?;
+        let start_line = args.start_line;
+        let read_lines = args.read_lines;
+        Ok(format!(
+            "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
+            start_line,
+            read_lines + start_line - 1,
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .skip(start_line)
+                .take(read_lines)
+                .collect::<String>(),
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .skip(start_line)
+                .take(read_lines)
+                .collect::<String>()
+        ))
     }
 }
 

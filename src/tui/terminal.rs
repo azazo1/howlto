@@ -9,6 +9,7 @@ type AppTerminal = Terminal<CrosstermBackend<Stderr>>;
 
 #[derive(Debug)]
 pub(crate) struct InlineTerminal {
+    closed: bool,
     terminal: AppTerminal,
 }
 
@@ -28,10 +29,7 @@ impl DerefMut for InlineTerminal {
 
 impl Drop for InlineTerminal {
     fn drop(&mut self) {
-        // ratatui::restore(); // ratatui::restore() 对 Inline 的恢复效果不好.
-        self.terminal.clear().ok();
-        self.terminal.show_cursor().ok();
-        crossterm::terminal::disable_raw_mode().ok();
+        self.close();
     }
 }
 
@@ -40,6 +38,20 @@ impl InlineTerminal {
         crossterm::terminal::enable_raw_mode()?;
         let backend: CrosstermBackend<Stderr> = CrosstermBackend::new(io::stderr());
         let terminal = Terminal::with_options(backend, options)?;
-        Ok(Self { terminal })
+        Ok(Self {
+            terminal,
+            closed: false,
+        })
+    }
+
+    pub(crate) fn close(&mut self) {
+        if self.closed {
+            return;
+        }
+        // ratatui::restore(); // ratatui::restore() 对 Inline 的恢复效果不好.
+        self.terminal.clear().ok();
+        self.terminal.show_cursor().ok();
+        crossterm::terminal::disable_raw_mode().ok();
+        self.closed = true;
     }
 }

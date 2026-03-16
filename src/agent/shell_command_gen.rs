@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agent::tools::{
-    FinishResponse, FinishResponseArgs, FinishResponseItem, Help, Man, TheFuck, Tldr,
+    DangerousHelp, FinishResponse, FinishResponseArgs, FinishResponseItem, Help, Man, TheFuck, Tldr,
 };
 use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
@@ -140,10 +140,11 @@ pub struct ModifyOption {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct ToolCallState: u8 {
-        const TLDR    = 0b0001;
-        const HELP    = 0b0010;
-        const MAN     = 0b0100;
-        const THEFUCK = 0b1000;
+        const TLDR           = 0b00001;
+        const HELP           = 0b00010;
+        const MAN            = 0b00100;
+        const THEFUCK        = 0b01000;
+        const DANGEROUS_HELP = 0b10000;
     }
 }
 
@@ -255,6 +256,9 @@ impl ScgAgent {
         if config.agent.use_tool_thefuck {
             builder = builder.tool(TheFuck::new(shell.name().to_string()));
         }
+        if config.agent.use_tool_dangerous_help {
+            builder = builder.tool(DangerousHelp);
+        }
         builder = builder.tool(FinishResponse);
 
         info!("Created.");
@@ -345,6 +349,9 @@ impl ScgAgent {
                             }
                             TheFuck::NAME => {
                                 tool_call_state |= ToolCallState::THEFUCK;
+                            }
+                            DangerousHelp::NAME => {
+                                tool_call_state |= ToolCallState::DANGEROUS_HELP;
                             }
                             _ => (),
                         }

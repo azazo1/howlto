@@ -56,6 +56,11 @@ pub struct AgentConfig {
     /// 是否使用 thefuck 修复命令工具.
     #[serde(default = "default_use_tool_thefuck")]
     pub use_tool_thefuck: bool,
+    /// 是否启用 dangerous_help 工具,
+    /// 用于获取 help 工具无法获取的帮助信息,
+    /// 每次执行都会向用户询问.
+    #[serde(default = "default_use_tool_dangerous_help")]
+    pub use_tool_dangerous_help: bool,
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
@@ -133,6 +138,10 @@ fn default_cache() -> bool {
 }
 
 fn default_use_tool_tldr() -> bool {
+    true
+}
+
+fn default_use_tool_dangerous_help() -> bool {
     true
 }
 

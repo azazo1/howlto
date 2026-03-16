@@ -11,6 +11,7 @@ howlto list zip a.zip
 howlto ls only files with time asc
 howlto convert a.mov to a.webp with fps 10, quality 50, width 500 and height auto
 howlto git remove all reflog
+howlto qpdf list all objects in a.pdf
 ```
 
 ## 修改

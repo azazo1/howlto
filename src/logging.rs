@@ -32,6 +32,8 @@ fn stderr_filter(metadata: &Metadata) -> bool {
 
 /// 初始化日志输出
 /// fixme: 在 windows 某些旧版的 terminal 中颜色代码一开始是乱码.
+///
+/// - `stderr`: 是否在 stderr 中输出, 如果为 false, 那么只在文件中输出.
 pub async fn init(
     config_dir: impl AsRef<Path>,
     stderr: bool,
