@@ -265,7 +265,10 @@ impl App {
 }
 
 /// 使用 tui 向用户询问是否执行某个命令, 如果用户同意, 返回 Ok(()), 如果用户拒绝, 返回 Err(String), 内含拒绝原因.
-pub(crate) fn confirm_execution(program: &Path, args: &[impl AsRef<str>]) -> Result<(), String> {
+pub(crate) async fn confirm_execution(
+    program: &Path,
+    args: &[impl AsRef<str>],
+) -> Result<(), String> {
     let command = std::iter::once(program.display().to_string())
         .chain(args.iter().map(|x| x.as_ref().to_string()))
         .collect::<Vec<_>>()
@@ -276,10 +279,17 @@ pub(crate) fn confirm_execution(program: &Path, args: &[impl AsRef<str>]) -> Res
         format!("Failed to initialize confirmation dialog: {e}")
     })?;
 
-    let decision = app.run().map_err(|e| {
-        warn!(error = %e, "dangerous confirmation dialog exited with error");
-        format!("Failed to read confirmation input: {e}")
-    })?;
+    // 暂时禁用 tracing_indicatif 进度条
+    let decision = tokio::task::spawn_blocking(|| {
+        tracing_indicatif::suspend_tracing_indicatif(|| {
+            app.run().map_err(|e| {
+                warn!(error = %e, "dangerous confirmation dialog exited with error");
+                format!("Failed to read confirmation input: {e}")
+            })
+        })
+    })
+    .await
+    .unwrap()?;
 
     match decision {
         AppDecision::Approve => {
@@ -316,16 +326,16 @@ mod tests {
             .init();
     }
 
-    #[test]
-    fn test_confirm_execution() {
+    #[tokio::test]
+    async fn test_confirm_execution() {
         log_init();
-        confirm_execution("approve".as_ref(), &["hello", "world"]).unwrap();
+        confirm_execution("approve".as_ref(), &["hello", "world"]).await.unwrap();
         assert_eq!(
-            confirm_execution("reject".as_ref(), &["hello", "worlds"]).unwrap_err(),
+            confirm_execution("reject".as_ref(), &["hello", "worlds"]).await.unwrap_err(),
             "Rejected by user."
         );
         assert_eq!(
-            confirm_execution("reject_with_reason".as_ref(), &["reason:", "noicant"]).unwrap_err(),
+            confirm_execution("reject_with_reason".as_ref(), &["reason:", "noicant"]).await.unwrap_err(),
             "Rejected by user: noicant"
         );
     }

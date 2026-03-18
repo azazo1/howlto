@@ -544,6 +544,7 @@ impl Tool for DangerousHelp {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         dangerous_execution::confirm_execution(&args.program, &args.args)
+            .await
             .map_err(io::Error::other)?;
         let mut command = tokio::process::Command::new(args.program);
         command
