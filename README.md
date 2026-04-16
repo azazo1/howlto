@@ -2,7 +2,7 @@
 
 一个命令行工具, 帮你快速找到想要使用的命令.
 
-Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini`.
+Fast 🚀, cheap 🤩, and low-spec 🗿 -- driven perfectly by `gpt-4o-mini` or `gpt-5.4-mini`.
 
 ## Demo
 
