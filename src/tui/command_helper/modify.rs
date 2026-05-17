@@ -7,30 +7,32 @@ use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     Viewport,
     prelude::*,
-    widgets::{Block, BorderType, Paragraph},
+    widgets::{Block, BorderType},
 };
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
+use tui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
     error::Result,
-    tui::{cmd::MINIMUM_TUI_WIDTH, editor::EditorState, terminal::InlineTerminal},
+    tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
 };
 
 const TITLE: &str = "Modify Prompt";
 const TITLE_STYLE: Style = Style::new()
     .fg(Color::LightGreen)
     .add_modifier(Modifier::BOLD);
-const HINT: &str = "enter: confirm | ctrl-j: newline | esc: quit";
+const HINT: &str = "enter: confirm | esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const COMMAND_TITLE: &str = "Command";
 const COMMAND_TITLE_STYLE: Style = Style::new().fg(Color::LightBlue);
 const COMMAND_BORDER_STYLE: Style = Style::new().fg(Color::Blue);
 const INPUT_BORDER_STYLE: Style = Style::new().fg(Color::Gray);
+const INPUT_STYLE: Style = Style::new();
 
 #[derive(Debug)]
 pub struct App {
@@ -41,29 +43,33 @@ pub struct App {
 #[derive(Debug)]
 struct AppWidget {
     command: String,
-    editor: EditorState,
+    text_area: TextArea<'static>,
 }
 
 #[derive(Debug)]
 enum AppEvent {
     Quit,
     Confirm,
-    Raw(Event),
+    Key(Event),
     Err(io::Error),
 }
+
+// ----------
 
 impl Widget for &AppWidget {
     fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
-        let width = (self.command.width_cjk() + 3)
-            .max(HINT.width_cjk() + 3)
-            .max(MINIMUM_TUI_WIDTH) as u16;
-        let [area] = Layout::horizontal([Constraint::Length(width)]).areas(area);
+        let [area] =
+            Layout::horizontal([Constraint::Length((self.command.width_cjk() + 3).clamp(
+                (HINT.width_cjk() + 3).max(MINIMUM_TUI_WIDTH),
+                area.width as usize,
+            ) as u16)])
+            .areas(area);
         let [command_block_area, input_area, hint_area] = Layout::vertical([
             Constraint::Fill(1),
-            Constraint::Length(5),
+            Constraint::Length(3),
             Constraint::Length(1),
         ])
         .areas(area);
@@ -83,28 +89,26 @@ impl Widget for &AppWidget {
             .title_top("")
             .title_top(Line::from(COMMAND_TITLE).style(COMMAND_TITLE_STYLE))
             .render(command_block_area, buf);
-        Paragraph::new(self.command.clone()).render(command_area, buf);
-        Paragraph::new(self.editor.lines_with_cursor())
-            .block(
-                Block::bordered()
-                    .title_top("")
-                    .title_top(Line::from(TITLE).style(TITLE_STYLE))
-                    .border_style(INPUT_BORDER_STYLE)
-                    .border_type(BorderType::Rounded),
-            )
-            .render(input_area, buf);
+        Text::from(self.command.clone()).render(command_area, buf);
+        self.text_area.render(input_area, buf);
     }
 }
 
 impl App {
     pub fn new(command: String) -> Result<Self> {
-        let terminal = InlineTerminal::init_inline_with_options(ratatui::TerminalOptions {
-            viewport: Viewport::Inline(8 + command.lines().count() as u16),
+        let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
+            viewport: Viewport::Inline(6 + command.lines().count() as u16),
         })?;
-        let widget = AppWidget {
-            command,
-            editor: EditorState::default(),
-        };
+        let mut text_area = TextArea::default();
+        text_area.set_block(
+            Block::bordered()
+                .title_top("")
+                .title_top(Line::from(TITLE).style(TITLE_STYLE))
+                .border_style(INPUT_BORDER_STYLE)
+                .border_type(BorderType::Rounded),
+        );
+        text_area.set_style(INPUT_STYLE);
+        let widget = AppWidget { command, text_area };
         Ok(Self { terminal, widget })
     }
 
@@ -117,6 +121,7 @@ impl App {
             };
         }
 
+        // 在 windows 某些终端中会将执行命令的回车键也监听到, 因此忽略这个事件.
         let start_time = Instant::now();
         let skip_enter_duration = Duration::from_millis(10);
         tokio::spawn(async move {
@@ -130,44 +135,48 @@ impl App {
                             send!(AppEvent::Quit)
                         }
                         KeyCode::Esc => send!(AppEvent::Quit),
-                        KeyCode::Enter if key.modifiers == KeyModifiers::CONTROL => {
-                            send!(AppEvent::Raw(Event::Key(key)))
-                        }
-                        KeyCode::Enter if key.modifiers.is_empty() => {
+                        KeyCode::Enter => {
                             if start_time.elapsed() > skip_enter_duration {
                                 send!(AppEvent::Confirm)
                             }
                         }
-                        _ => send!(AppEvent::Raw(Event::Key(key))),
+                        _ => send!(AppEvent::Key(evt.unwrap())),
                     },
                     Err(e) => send!(AppEvent::Err(e)),
-                    _ => {}
+                    _ => (),
                 }
             }
         })
+    }
+
+    fn handle_key(&mut self, key_evt: Event) {
+        self.widget.text_area.input(key_evt);
     }
 
     async fn run(mut self) -> Result<Option<String>> {
         let (tx, mut rx) = unbounded_channel();
         let handle = self.start_handle_events(tx);
         let rst = loop {
-            self.terminal
-                .draw(|frame| frame.render_widget(&self.widget, frame.area()))?;
+            if let Err(e) = self.terminal.draw(|frame| {
+                frame.render_widget(&self.widget, frame.area());
+            }) {
+                break Err(e);
+            }
             let Some(evt) = rx.recv().await else {
                 break Ok(None);
             };
             match evt {
                 AppEvent::Quit => break Ok(None),
-                AppEvent::Confirm => break Ok(Some(self.widget.editor.text())),
-                AppEvent::Raw(raw) => {
-                    self.widget.editor.handle_event(raw, true);
+                AppEvent::Confirm => {
+                    break Ok(Some(self.widget.text_area.lines().join("\n")));
                 }
-                AppEvent::Err(error) => break Err(error.into()),
+                AppEvent::Key(key_evt) => self.handle_key(key_evt),
+                AppEvent::Err(e) => break Err(e),
             }
         };
         handle.abort();
         handle.await.ok();
-        rst
+        Ok(rst?)
     }
 
     pub async fn prompt(command: String) -> Result<Option<String>> {

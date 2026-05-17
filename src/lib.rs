@@ -4,6 +4,5 @@ pub mod error;
 pub mod logging;
 #[cfg(feature = "mocker")]
 pub mod mock_openai_server;
-pub mod session;
 pub mod shell;
 pub mod tui;

@@ -12,9 +12,10 @@ use ratatui::{
     widgets::{Block, BorderType, Padding, Paragraph, Wrap},
 };
 use tracing::{info, warn};
+use tui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
-use crate::tui::{editor::EditorState, terminal::InlineTerminal};
+use crate::tui::terminal::InlineTerminal;
 
 const TITLE: &str = "Confirm Execution";
 const TITLE_STYLE: Style = Style::new()
@@ -24,6 +25,7 @@ const BORDER_STYLE: Style = Style::new().fg(Color::Red);
 const WARNING_STYLE: Style = Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const INPUT_BORDER_STYLE: Style = Style::new().fg(Color::Gray);
+const INPUT_STYLE: Style = Style::new();
 const MINIMUM_TUI_WIDTH: usize = 56;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +38,7 @@ enum Mode {
 struct AppWidget {
     command: String,
     mode: Mode,
-    reason_input: EditorState,
+    reason_input: TextArea<'static>,
 }
 
 #[derive(Debug)]
@@ -138,15 +140,7 @@ impl Widget for &AppWidget {
                     .style(Style::new().fg(Color::White))
                     .wrap(Wrap { trim: true })
                     .render(command_area, buf);
-                Paragraph::new(self.reason_input.lines_with_cursor())
-                    .block(
-                        Block::bordered()
-                            .title_top("")
-                            .title_top(Line::from("Reject Reason").style(HINT_STYLE))
-                            .border_type(BorderType::Rounded)
-                            .border_style(INPUT_BORDER_STYLE),
-                    )
-                    .render(input_area, buf);
+                self.reason_input.render(input_area, buf);
                 Paragraph::new("enter: submits rejection\nesc: back to decision mode")
                     .style(HINT_STYLE)
                     .right_aligned()
@@ -158,12 +152,21 @@ impl Widget for &AppWidget {
 
 impl App {
     fn new(command: String) -> io::Result<Self> {
+        let mut reason_input = TextArea::default();
+        reason_input.set_block(
+            Block::bordered()
+                .title_top("")
+                .title_top(Line::from("Reject Reason").style(HINT_STYLE))
+                .border_type(BorderType::Rounded)
+                .border_style(INPUT_BORDER_STYLE),
+        );
+        reason_input.set_style(INPUT_STYLE);
         let widget = AppWidget {
             command,
             mode: Mode::Decision,
-            reason_input: EditorState::default(),
+            reason_input,
         };
-        let terminal = InlineTerminal::init_inline_with_options(ratatui::TerminalOptions {
+        let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
             viewport: Viewport::Inline(widget.calc_height()),
         })?;
         Ok(Self { terminal, widget })
@@ -171,7 +174,7 @@ impl App {
 
     fn update_viewport(&mut self) -> io::Result<()> {
         self.terminal.close();
-        self.terminal = InlineTerminal::init_inline_with_options(ratatui::TerminalOptions {
+        self.terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
             viewport: Viewport::Inline(self.widget.calc_height()),
         })?;
         Ok(())
@@ -202,7 +205,13 @@ impl App {
     fn handle_reason_key(&mut self, key: KeyEvent) -> io::Result<Option<AppDecision>> {
         match key.code {
             KeyCode::Enter if key.modifiers.is_empty() => {
-                let reason = self.widget.reason_input.text().trim().to_string();
+                let reason = self
+                    .widget
+                    .reason_input
+                    .lines()
+                    .join("\n")
+                    .trim()
+                    .to_string();
                 let reason = if reason.is_empty() {
                     "Rejected by user.".to_string()
                 } else {
@@ -219,7 +228,7 @@ impl App {
                 Ok(Some(AppDecision::Reject("Rejected by user.".to_string())))
             }
             _ => {
-                self.widget.reason_input.handle_event(Event::Key(key), true);
+                self.widget.reason_input.input(Event::Key(key));
                 Ok(None)
             }
         }
@@ -307,6 +316,8 @@ mod tests {
     fn log_init() {
         let indicatif_layer = IndicatifLayer::new();
         let stderr_layer = tracing_subscriber::fmt::layer()
+            .with_target(false)
+            .without_time()
             .with_writer(indicatif_layer.get_stderr_writer())
             .with_filter(LevelFilter::INFO);
         tracing_subscriber::registry()
@@ -316,22 +327,15 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "manual tui smoke test"]
     async fn test_confirm_execution() {
         log_init();
-        confirm_execution("approve".as_ref(), &["hello", "world"])
-            .await
-            .unwrap();
+        confirm_execution("approve".as_ref(), &["hello", "world"]).await.unwrap();
         assert_eq!(
-            confirm_execution("reject".as_ref(), &["hello", "worlds"])
-                .await
-                .unwrap_err(),
+            confirm_execution("reject".as_ref(), &["hello", "worlds"]).await.unwrap_err(),
             "Rejected by user."
         );
         assert_eq!(
-            confirm_execution("reject_with_reason".as_ref(), &["reason:", "noicant"])
-                .await
-                .unwrap_err(),
+            confirm_execution("reject_with_reason".as_ref(), &["reason:", "noicant"]).await.unwrap_err(),
             "Rejected by user: noicant"
         );
     }
