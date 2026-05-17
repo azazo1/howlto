@@ -12,10 +12,12 @@ pub const DEFAULT_CONFIG_DIR: &str = "~\\.config\\howlto\\";
 pub const DEFAULT_CONFIG_DIR: &str = "~/.config/howlto/";
 #[cfg(all(not(unix), not(windows)))]
 compile_error!("OS not supported.");
+
 pub const PROFILES_TOML_FILE: &str = "profiles.toml";
 pub const CONFIG_TOML_FILE: &str = "config.toml";
+pub const SESSIONS_DIR: &str = "sessions";
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct AppConfig {
     #[serde(default)]
     pub llm: LlmConfig,
@@ -23,60 +25,42 @@ pub struct AppConfig {
     pub agent: AgentConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LlmConfig {
-    /// LLM api key.
     #[serde(default)]
     pub api_key: String,
-    /// LLM 提供商 base url.
     #[serde(default)]
     pub base_url: String,
-    /// agent 使用的 LLM 模型.
     #[serde(default = "default_model")]
     pub model: String,
-    /// LLM 输出 max_tokens
     pub max_tokens: Option<u64>,
-    /// LLM 输出 temperature 参数.
     pub temperature: Option<f64>,
-    // todo gemini, anthropic api ...
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentConfig {
-    /// 是否使用 man page 帮助工具辅助 agent 生成内容, 在 windows 下调用可能会失败.
     #[serde(default = "default_use_tool_man")]
     pub use_tool_man: bool,
-    /// 是否使用 --help 帮助工具辅助 agent 生成内容,
-    /// 是否能够执行成功取决与程序是否接受 `--help`参数.
     #[serde(default = "default_use_tool_help")]
     pub use_tool_help: bool,
-    /// 是否使用 tldr 获取帮助信息工具.
     #[serde(default = "default_use_tool_tldr")]
     pub use_tool_tldr: bool,
-    /// 是否使用 thefuck 修复命令工具.
     #[serde(default = "default_use_tool_thefuck")]
     pub use_tool_thefuck: bool,
-    /// 是否启用 dangerous_help 工具,
-    /// 用于获取 help 工具无法获取的帮助信息,
-    /// 每次执行都会向用户询问.
     #[serde(default = "default_use_tool_dangerous_help")]
     pub use_tool_dangerous_help: bool,
     #[serde(default = "default_cache")]
-    /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
-    /// 模型输出语言.
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default)]
-    pub shell_command_gen: ShellCommandGenConfig,
+    pub cmd: CommandConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShellCommandGenConfig {
-    /// Shell Comamnd Gen 输出的命令个数.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CommandConfig {
     #[serde(default = "default_output_n")]
     pub output_n: u32,
-    /// Shell Command Gen 是否等待输出显示完毕,
     #[serde(default = "default_wait_for_output_scrolling")]
     pub wait_for_output_scrolling: bool,
 }
@@ -99,7 +83,7 @@ impl Default for LlmConfig {
     }
 }
 
-impl Default for ShellCommandGenConfig {
+impl Default for CommandConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
@@ -145,17 +129,31 @@ fn default_use_tool_dangerous_help() -> bool {
     true
 }
 
+#[derive(Debug, Clone)]
 pub struct AppConfigLoader {
     config_dir: PathBuf,
 }
 
 impl AppConfigLoader {
     pub async fn new(config_dir: impl AsRef<Path>) -> Result<Self> {
-        // 创建配置文件目录, 并返回 expand 之后的路径.
         fs::create_dir_all(&config_dir).await?;
         Ok(Self {
             config_dir: config_dir.as_ref().into(),
         })
+    }
+
+    pub fn config_dir(&self) -> &Path {
+        &self.config_dir
+    }
+
+    pub fn sessions_dir(&self) -> PathBuf {
+        self.config_dir.join(SESSIONS_DIR)
+    }
+
+    pub async fn ensure_sessions_dir(&self) -> Result<PathBuf> {
+        let sessions_dir = self.sessions_dir();
+        fs::create_dir_all(&sessions_dir).await?;
+        Ok(sessions_dir)
     }
 
     pub async fn load_or_create_config(&self) -> Result<AppConfig> {
@@ -166,9 +164,8 @@ impl AppConfigLoader {
             fs::write(config_file_path, content).await?;
             Ok(config)
         } else {
-            let config: AppConfig =
-                toml::from_str(&fs::read_to_string(self.config_dir.join(CONFIG_TOML_FILE)).await?)?;
-            Ok(config)
+            let content = fs::read_to_string(self.config_dir.join(CONFIG_TOML_FILE)).await?;
+            Ok(toml::from_str(&content)?)
         }
     }
 
@@ -181,12 +178,11 @@ impl AppConfigLoader {
 
     pub async fn load_or_create_profiles(&self) -> Result<Profiles> {
         let profile_path = self.config_dir.join(PROFILES_TOML_FILE);
-        let profiles: Profiles = if !profile_path.is_file() {
-            self.create_default_profiles().await?
+        if !profile_path.is_file() {
+            self.create_default_profiles().await
         } else {
             let content = fs::read_to_string(profile_path).await?;
-            toml::from_str(&content)?
-        };
-        Ok(profiles)
+            Ok(toml::from_str(&content)?)
+        }
     }
 }

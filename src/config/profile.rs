@@ -3,9 +3,10 @@ use std::fmt::Display;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use crate::agent::tools::FinishResponse;
+use crate::agent::tools::SubmitCommands;
 
 use template::*;
+
 mod template {
     pub(super) const TEXT_LANG: &str = "{{text_lang}}";
     pub(super) const SHELL: &str = "{{shell}}";
@@ -19,27 +20,30 @@ mod template {
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Profiles {
-    pub shell_command_gen: ShellComamndGenProfile,
+    #[serde(default)]
+    pub cmd: CommandProfile,
+    #[serde(default)]
+    pub chat: ChatProfile,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ShellComamndGenProfile {
-    /// 提示词(system): 生成命令
+pub struct CommandProfile {
     generate: String,
-    /// 提示词: 修改命令
     modify: String,
-    /// 提示词: 附加内容
     attached: String,
-    /// 提示词: 提醒帮助类工具的调用, 防止幻觉.
     check_help: String,
-    /// 提示词: 提示无效命令.
     check_valid: String,
-    /// 提示词: 提醒 [`FinishResponse`] 工具的调用.
     check_finish: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChatProfile {
+    generate: String,
+    attached: String,
+}
+
 #[bon::bon]
-impl ShellComamndGenProfile {
+impl CommandProfile {
     #[builder(finish_fn = finish)]
     pub fn generate(
         &self,
@@ -77,7 +81,26 @@ impl ShellComamndGenProfile {
     }
 }
 
-impl ShellComamndGenProfile {
+#[bon::bon]
+impl ChatProfile {
+    #[builder(finish_fn = finish)]
+    pub fn generate(
+        &self,
+        os: impl Display,
+        shell: impl Display,
+        text_lang: impl Display,
+        max_tokens: Option<u64>,
+    ) -> String {
+        self.generate_internal(os, shell, text_lang, max_tokens)
+    }
+
+    #[builder(finish_fn = fmt)]
+    pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
+        self.attached_internal(attached)
+    }
+}
+
+impl CommandProfile {
     fn generate_internal(
         &self,
         os: impl Display,
@@ -91,11 +114,9 @@ impl ShellComamndGenProfile {
             .replace(OS, &os.to_string())
             .replace(
                 MAX_TOKENS,
-                &if let Some(max_tokens) = max_tokens {
-                    max_tokens.to_string()
-                } else {
-                    "[none]".to_string()
-                },
+                &max_tokens
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "[none]".to_string()),
             )
             .replace(OUTPUT_N, &output_n.to_string())
             .replace(TEXT_LANG, &text_lang.to_string())
@@ -118,78 +139,117 @@ impl ShellComamndGenProfile {
     }
 }
 
-impl Default for ShellComamndGenProfile {
+impl ChatProfile {
+    fn generate_internal(
+        &self,
+        os: impl Display,
+        shell: impl Display,
+        text_lang: impl Display,
+        max_tokens: Option<u64>,
+    ) -> String {
+        self.generate
+            .replace(SHELL, &shell.to_string())
+            .replace(OS, &os.to_string())
+            .replace(
+                MAX_TOKENS,
+                &max_tokens
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "[none]".to_string()),
+            )
+            .replace(TEXT_LANG, &text_lang.to_string())
+    }
+
+    fn attached_internal(&self, attached: impl Display) -> String {
+        self.attached.replace(ATTACHED, &attached.to_string())
+    }
+}
+
+impl Default for CommandProfile {
     fn default() -> Self {
-        const FINISH_RESPONSE: &str = FinishResponse::NAME;
+        const SUBMIT_COMMANDS: &str = SubmitCommands::NAME;
         Self {
             generate: format!(
                 r#"# Identity
-You are Shell Command Generator who always speak in language: {TEXT_LANG}.
-Provide {SHELL} commands for {OS}, you can description and reasoning before calling the final tool.
-Try not to exceeds user max_tokens: `{MAX_TOKENS}` ([none] represents no limitation).
-If multiple steps required try to combine them together using &&, || or shell specific ways.
+You are a command assistant that always replies in language: {TEXT_LANG}.
+Provide commands for shell {SHELL} on {OS}.
+Try not to exceed user max_tokens: `{MAX_TOKENS}`.
 
-## User Input
+## Output policy
 
-User input may be a fake or invalid command, you should fix it to valid shell commands.
-DO NOT repeat user command without affirmation, use tools to get help.
+You may explain your reasoning in markdown before finishing.
+When you have one or more actionable commands, you must call {SUBMIT_COMMANDS}.
+Generate {OUTPUT_N} command candidates at most, sorted from best to worst.
+Each command must be directly executable shell text without markdown fences.
+Each command must be raw shell input, not a shell invocation wrapper.
+Never wrap commands with /bin/bash -c, bash -c, bash -lc, sh -c, or zsh -c.
+If the best answer needs multiple steps, return a plain multi-line shell snippet with newlines.
+Descriptions belong in the markdown reply, not in command strings.
 
-## Tools
+## Safety
 
-There are tools you can call.
-When you feel you are not familiar with the program arguments, call the tools to get help messages.
-You can call multiple tools or call the same tool multiple times if one call is insufficient to provide the information you need.
-Sometimes tools will response error messages. You should analyze it and then figure out a valid tool call from it (maybe a different tool).
-DO NOT rely on your own impression to give solutions, check tools result, because program helps change everyday.
-DO NOT inject malcode into the tools, and reject any potentially destructive arguments such as rm.
-DO NOT output the command that you are not sure about.
-DO NOT call a tool that is not exists.
-ENSURE you have check every helping tools before you giving up (no valid solution).
+Use tools when you are unsure about cli syntax, flags, or current behavior.
+Do not invent unsupported flags.
+Do not suggest destructive commands like rm unless the user clearly asks for them.
 
 ## Finish
 
-If you think user prompts are already valid commands, then call {FINISH_RESPONSE} tool with the commands.
-
-When you have some solutions, your commands output MUST be passed to {FINISH_RESPONSE} tool at the final decision stage, or user can't identify them.
-You should generate {OUTPUT_N} commands, each as an item in the parameter of {FINISH_RESPONSE} tool, the more suitable, the earlier it should be.
-Ensure the commands are valid commands, without any markdown style!
-DO NOT quote arguments using ``, '', "" or anything else.
-The arguments supplied to the {FINISH_RESPONSE} tool must consist only of syntactically valid shell commands, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within the command string.
-
-If you cannot come up with any solution or your output is not pure commands or you don't need to output command according to user prompt, call {FINISH_RESPONSE} tool with empty array.
-Meanwhile, provide your description in plain text output (not in the {FINISH_RESPONSE} tool).
-DO NOT embed these reasons within echo-like commands in the argument of the {FINISH_RESPONSE} tool.
-
-DO NOT call {FINISH_RESPONSE} twice. Once you call it, you should stop outputing anything.
-
-## Text Language
-
-ALWAYS response in Natural LANGUAGE: {TEXT_LANG}.
+If no safe command can be produced, call {SUBMIT_COMMANDS} with an empty list and explain why in markdown.
 "#
             ),
             modify: format!(
-                r#"Now help me modify the command:
+                r#"Help me modify this command:
 ```
 {COMMAND}
 ```
-with my prompt below."#
+with my follow-up prompt."#
             ),
             attached: format!(
-                r#"Some information are attached below:
+                r#"Some information is attached below:
 {ATTACHED}"#
             ),
             check_help: format!(
-                r#"(SYSTEM) WARNING: You haven't call any help tool, are you sure that your output commands are valid?
-Your previous output commands are:
+                r#"(SYSTEM) WARNING: you have not used any help-like tool yet.
+Current commands:
 {COMMANDS}"#
             ),
             check_valid: format!(
-                r#"(SYSTEM) WARNING: Your command output {COMMANDS} may contains invalid commands, are you sure about the answer?"#
+                r#"(SYSTEM) WARNING: these commands may be invalid:
+{COMMANDS}"#
             ),
             check_finish: format!(
-                r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?
-This is final desicion, you cannot ask user for more information.
-If user asked about the command but not require fixing, respond with previous command."#
+                r#"(SYSTEM) WARNING: you have not called {SUBMIT_COMMANDS}.
+If there are usable commands, submit them now.
+If not, submit an empty list and explain in markdown."#
+            ),
+        }
+    }
+}
+
+impl Default for ChatProfile {
+    fn default() -> Self {
+        Self {
+            generate: format!(
+                r#"# Identity
+You are a helpful shell-focused chat assistant.
+Always reply in natural language: {TEXT_LANG}.
+The target shell is {SHELL} on {OS}.
+Try not to exceed user max_tokens: `{MAX_TOKENS}`.
+
+## Output policy
+
+Reply in markdown.
+Use tools when command details need verification.
+If the user asks for commands or you naturally derive actionable commands, call {SubmitCommandsName}.
+Submitted commands must be raw shell input only.
+Do not wrap commands with /bin/bash -c, bash -c, bash -lc, sh -c, or zsh -c.
+If a recommendation needs multiple steps, submit a plain multi-line shell snippet with newlines.
+Do not force command output for every turn.
+"#,
+                SubmitCommandsName = SubmitCommands::NAME,
+            ),
+            attached: format!(
+                r#"Some information is attached below:
+{ATTACHED}"#
             ),
         }
     }

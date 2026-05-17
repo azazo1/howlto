@@ -2,21 +2,23 @@ use std::io;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::tty::IsTty;
 use howlto::config::AppConfigLoader;
 use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
 use howlto::logging;
+use howlto::session::SessionStore;
 use howlto::shell::Shell;
-use howlto::tui;
+use howlto::tui::{self, DetectMode, PromptMode};
 use tokio::io::AsyncReadExt;
 
 #[derive(clap::Parser)]
-#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version, author)]
+#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about = None, version, author)]
 struct AppArgs {
-    /// 命令生成提示词, 当其为空的时候, 进入交互模式.
-    #[clap(num_args=0..)]
+    #[clap(subcommand)]
+    command: Option<ModeCommand>,
+    #[clap(num_args = 0..)]
     prompt: Vec<String>,
     #[clap(short, long, help = "配置文件所在的目录", default_value = DEFAULT_CONFIG_DIR)]
     config: PathBuf,
@@ -30,11 +32,26 @@ struct AppArgs {
     init: bool,
     #[clap(long, help = "[Shell 集成参数]")]
     htcmd_file: Option<PathBuf>,
+    #[clap(long, help = "恢复 chat 会话 id")]
+    resume: Option<String>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ModeCommand {
+    Cmd {
+        #[clap(num_args = 1..)]
+        prompt: Vec<String>,
+    },
+    Chat {
+        #[clap(num_args = 0..)]
+        prompt: Vec<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let AppArgs {
+        command,
         prompt,
         config: config_dir,
         plain,
@@ -42,10 +59,10 @@ async fn main() -> anyhow::Result<()> {
         init,
         htcmd_file,
         debug,
+        resume,
     } = AppArgs::parse();
 
     let shell = Shell::detect_shell();
-
     let config_dir_str = config_dir
         .to_str()
         .ok_or(io::Error::new(
@@ -54,7 +71,6 @@ async fn main() -> anyhow::Result<()> {
         ))
         .with_context(|| format!("无效的文件名: {config_dir:?}"))?;
     let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
-
     let config_loader = AppConfigLoader::new(&config_dir)
         .await
         .with_context(|| format!("无法创建配置目录: {}", config_dir.display()))?;
@@ -66,7 +82,6 @@ async fn main() -> anyhow::Result<()> {
         .load_or_create_profiles()
         .await
         .with_context(|| format!("无法加载 Profiles: {}", config_dir.display()))?;
-
     let _guard = logging::init(&config_dir, !quiet, debug)
         .await
         .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
@@ -82,7 +97,6 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // 提前检查
     if config.llm.base_url.is_empty() {
         Err(anyhow::anyhow!(
             "LLM Base Url 为空, 请检查配置信息是否填写正确: {}",
@@ -90,30 +104,54 @@ async fn main() -> anyhow::Result<()> {
         ))?
     }
 
-    if prompt.is_empty() {
-        todo!("实现交互功能 tui::chatter")
+    let mut stdin = tokio::io::stdin();
+    let attached = if !stdin.is_tty() {
+        let mut s = String::new();
+        stdin.read_to_string(&mut s).await?;
+        Some(s)
     } else {
-        let prompt: String = prompt.join(" ");
-        // attach stdin
-        let mut stdin = tokio::io::stdin();
-        let attached = if !stdin.is_tty() {
-            let mut s = String::new();
-            stdin.read_to_string(&mut s).await?;
-            Some(s)
-        } else {
-            None
-        };
+        None
+    };
 
-        tui::command_helper::run()
-            .config(config)
-            .prompt(&prompt)
-            .maybe_htcmd_file(htcmd_file)
-            .shell(&shell)
-            .profiles(profiles)
-            .plain(plain)
-            .maybe_attached(attached)
-            .call()
-            .await?;
+    let session_store = SessionStore::new(config_loader.ensure_sessions_dir().await?);
+    let routed = match command {
+        Some(ModeCommand::Cmd { prompt }) => PromptMode::Cmd(prompt.join(" ")),
+        Some(ModeCommand::Chat { prompt }) => PromptMode::Chat {
+            prompt: if prompt.is_empty() {
+                None
+            } else {
+                Some(prompt.join(" "))
+            },
+            resume,
+        },
+        None if prompt.is_empty() => PromptMode::Chat {
+            prompt: None,
+            resume,
+        },
+        None => match tui::detect_mode(&prompt.join(" ")) {
+            DetectMode::Chat => PromptMode::Chat {
+                prompt: Some(prompt.join(" ")),
+                resume,
+            },
+            DetectMode::Cmd => PromptMode::Cmd(prompt.join(" ")),
+        },
+    };
+
+    if plain && !matches!(routed, PromptMode::Cmd(_)) {
+        Err(anyhow::anyhow!("--plain 仅支持 cmd 模式"))?
     }
+
+    tui::run()
+        .mode(routed)
+        .config(config)
+        .shell(&shell)
+        .profiles(profiles)
+        .plain(plain)
+        .maybe_htcmd_file(htcmd_file)
+        .maybe_attached(attached)
+        .session_store(session_store)
+        .call()
+        .await?;
+
     Ok(())
 }

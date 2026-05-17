@@ -8,6 +8,8 @@ pub enum Error {
     TomlSerError(#[from] toml::ser::Error),
     #[error(transparent)]
     TomlDeError(#[from] toml::de::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
     #[error("Profile {profile} not found.")]
     ProfileNotFound { profile: &'static str },
     #[error(transparent)]
@@ -16,6 +18,8 @@ pub enum Error {
     ReqwestError(#[from] reqwest::Error),
     #[error("Streaming, {0}")]
     StreamingError(String),
+    #[error("Prompt error: {0}")]
+    PromptError(String),
     #[error("{0}")]
     InvalidInput(String),
     #[error("{0}")]

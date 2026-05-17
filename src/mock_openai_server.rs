@@ -8,7 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::info;
+use tracing::debug;
 
 // OpenAI API 数据结构
 #[derive(Debug, Deserialize)]
@@ -229,7 +229,7 @@ pub async fn chat_completions(
             })
         })
         .unwrap_or_default();
-    info!(target: "mock-openai-server", "User prompt: {}", user_message);
+    debug!(target: "mock-openai-server", "User prompt: {}", user_message);
 
     // 在映射中查找响应
     let response_content = state
@@ -302,7 +302,7 @@ pub async fn chat_completions(
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
 
-            // 发送工具调用 - finish_response
+            // 发送工具调用 - submit_commands
             let tool_call_id = format!("call_{}", uuid::Uuid::new_v4());
 
             // 发送工具调用开始块
@@ -321,7 +321,7 @@ pub async fn chat_completions(
                             id: Some(tool_call_id.clone()),
                             tool_type: Some("function".to_string()),
                             function: Some(FunctionCallDelta {
-                                name: Some("finish_response".to_string()),
+                                name: Some("submit_commands".to_string()),
                                 arguments: None,
                             }),
                         }]),
@@ -336,7 +336,20 @@ pub async fn chat_completions(
 
             // 发送工具调用参数块
             let tool_arguments = serde_json::json!({
-                "results": ["ls -l", "ls -al", "ls -ahl"]
+                "results": [
+                    {
+                        "command": "ls -l",
+                        "summary": "List files with details."
+                    },
+                    {
+                        "command": "ls -al",
+                        "summary": "List all files including hidden ones."
+                    },
+                    {
+                        "command": "ls -ahl",
+                        "summary": "List all files with human readable sizes."
+                    }
+                ]
             })
             .to_string();
 

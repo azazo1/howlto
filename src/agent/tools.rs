@@ -16,22 +16,15 @@ fn default_read_lines() -> usize {
     50
 }
 
-/// 获取 --help 内容
 pub struct Help;
 
 #[derive(serde::Deserialize)]
 pub struct HelpArgs {
-    /// 要执行 `--help` 的程序, 可以使用 PATH 中的程序而不提供绝对路径.
     program: PathBuf,
-    /// 子命令, 比如 `git add --help` 中的 `add` 就是一个子命令, 可以添加多层的子命令,
-    /// 形成类似 `program a b c --help` 的效果.
-    /// 此参数可以为空.
     #[serde(default)]
     subcommands: Vec<String>,
-    /// `--help` 中从指定行开始返回内容, 为 [`None`] 则默认为 0 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// `--help` 中读取指定行数, 为 [`None`] 则默认为 50 行.
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
@@ -40,49 +33,33 @@ impl Tool for Help {
     const NAME: &'static str = "help";
 
     type Error = io::Error;
-
     type Args = HelpArgs;
-
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get help of the program. \
-                As is equal to `program *subcommands --help` (simply adding --help after subcommands). \
-                If you find it cannot return the expected help messages, you can try dangerous help tools. \
-                Don't read too many lines at a time. \
-                Call this multiple times to scan for the messages you need."
+            description: "Get help of the program. Use repeated calls to scan a large help page."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "subcommands": {
                         "type": "array",
-                        "items": {
-                            "type": "string",
-                            "description": "subcommand in a level"
-                        },
-                        "description": r#"Subcommands of the program, \
-                            e.g.: you should give `["a", "b", "c"]` to get the help of `program a b c`. \
-                            if no subcommand is needed, to get help of the program itself, just skip this parameter. \
-                            Your query should start with [] or not given, getting the help of program itself, and then call again for the specific subcommands. \
-                            When you feel you are on the wrong subcommand, you can pop a level and check other subcommands."#
+                        "items": {"type": "string"},
+                        "description": "Nested subcommands."
                     },
                     "program": {
                         "type": "string",
-                        "description": "The program path you want to get help, \
-                            program in the PATH, \
-                            relative path and absolute path are available."
+                        "description": "Program path or program name in PATH."
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": "Skip this many lines before reading."
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                        "description": "Read this many lines."
                     }
                 },
                 "required": ["program"],
@@ -105,41 +82,31 @@ impl Tool for Help {
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
-            read_lines + start_line - 1,
+            read_lines + start_line.saturating_sub(1),
             String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>(),
+                .collect::<Vec<_>>()
+                .join("\n"),
             String::from_utf8_lossy(&output.stderr)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>()
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
     }
 }
 
-/// 获取 man page.
 pub struct Man;
 
 #[derive(serde::Deserialize)]
 pub struct ManArgs {
-    /// - 1 - 用户命令 (User Commands)
-    /// - 2 - 系统调用 (System Calls)
-    /// - 3 - C 库函数 (C Library Functions)
-    /// - 4 - 设备与驱动 (Devices and Drivers)
-    /// - 5 - 文件格式 (File Formats)
-    /// - 6 - 游戏 (Games)
-    /// - 7 - 杂项/标准 (Miscellanea/Standards)
-    /// - 8 - 系统管理命令 (System Administration)
     section: Option<usize>,
-    /// 要查询的 entry 名.
     entry: String,
-    /// same as: [`HelpArgs::start_line`]
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// same as: [`HelpArgs::read_lines`]
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
@@ -148,48 +115,32 @@ impl Tool for Man {
     const NAME: &'static str = "man";
 
     type Error = io::Error;
-
     type Args = ManArgs;
-
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get man page help messages, don't read too many lines at a time, \
-                call this multiple times to scan for the messages you need."
-                .into(),
+            description: "Get man page help messages.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "entry": {
                         "type": "string",
-                        "description": "Man page entry name, which should not have whitespaces, \
-                            if you want to get help of the subcommand of a program, \
-                            pass the program name here and check inside."
+                        "description": "Man page entry name."
                     },
                     "section": {
                         "type": "number",
-                        "description": "The section of the entry in man page, \
-                        1 for User Commands, \
-                        2 for System Calls, \
-                        3 for C Library Functions, \
-                        4 for Devices and Drivers, \
-                        5 for File Formats, \
-                        6 for Games, \
-                        7 for Misc/Standards, \
-                        8 for System Administration. \
-                        This parameter is optional, you can skip this if you are not sure."
+                        "description": "Optional man section."
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": "Skip this many lines before reading."
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
-                    },
+                        "description": "Read this many lines."
+                    }
                 },
                 "required": ["entry"],
             }),
@@ -201,24 +152,14 @@ impl Tool for Man {
         if entry.contains(char::is_whitespace) || entry.starts_with('-') {
             Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!(
-                    "invalid entry: {}, entry should not start with \'-\' and should not contain whitespace",
-                    entry
-                ),
+                format!("invalid entry: {entry}"),
             ))?
         }
-        let Ok(man_program) = which::which("man") else {
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "man program not found, this tool is not available now.",
-            ))?
-        };
-        let Ok(col_program) = which::which("col") else {
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "col program not found, this tool is not available now.",
-            ))?
-        };
+        let man_program = which::which("man")
+            .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "man program not found"))?;
+        let col_program = which::which("col")
+            .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "col program not found"))?;
+
         let mut command1 = tokio::process::Command::new(man_program);
         let mut command2 = tokio::process::Command::new(col_program);
         if let Some(section) = args.section {
@@ -246,7 +187,6 @@ impl Tool for Man {
         let mut stderr = Vec::new();
         tokio::io::copy(child1.stderr.as_mut().unwrap(), &mut stderr).await?;
 
-        // 这里要边调用边读取其输出, 不然过长的内容会导致子程序认为输出缓冲区满了停止输出, 进入等待, 导致死锁.
         let mut stdout = Vec::new();
         tokio::io::copy(child2.stdout.as_mut().unwrap(), &mut stdout).await?;
 
@@ -256,22 +196,23 @@ impl Tool for Man {
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
-            read_lines + start_line - 1,
+            read_lines + start_line.saturating_sub(1),
             String::from_utf8_lossy(&stdout)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>(),
+                .collect::<Vec<_>>()
+                .join("\n"),
             String::from_utf8_lossy(&stderr)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>()
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
     }
 }
 
-/// 调用 tldr 获取帮助.
 pub struct Tldr;
 
 #[derive(Debug, Deserialize)]
@@ -283,25 +224,19 @@ impl Tool for Tldr {
     const NAME: &'static str = "tldr";
 
     type Error = io::Error;
-
     type Args = TldrArgs;
-
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get tldr (Too Long Don't Read) help.".into(),
+            description: "Get tldr help.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "page": {
                         "type": "array",
-                        "items": {
-                            "type": "string",
-                            "description": "A layer of page"
-                        },
-                        "description": "The page name you want to query, e.g. if you want to query git help, pass [\"git\"], if you want to query git commit, pass [\"git\", \"commit\"]."
+                        "items": {"type": "string"}
                     }
                 },
                 "required": ["page"],
@@ -310,23 +245,17 @@ impl Tool for Tldr {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let tldr_program = which::which("tldr").map_err(|_| {
-            io::Error::new(
-                ErrorKind::NotFound,
-                "tldr program not found, this tool is invalid now.",
-            )
-        })?;
-        // 尝试使用空格拆分.
+        let tldr_program = which::which("tldr")
+            .map_err(|_| io::Error::new(ErrorKind::NotFound, "tldr program not found"))?;
         let page: Vec<_> = args
             .page
             .iter()
-            .flat_map(|x| x.split_whitespace())
+            .flat_map(|value| value.split_whitespace())
             .collect();
 
         let mut command = tokio::process::Command::new(tldr_program);
         command.args(page);
-
-        debug!(target: "tool-tldr", "Calling command: {:?}...", command);
+        debug!(target: "tool-tldr", "Calling command {:?}...", command);
 
         let output = command.output().await?;
         Ok(format!(
@@ -337,7 +266,6 @@ impl Tool for Tldr {
     }
 }
 
-/// 调用外部 thefuck 工具修复命令
 pub struct TheFuck {
     shell_name: String,
 }
@@ -357,15 +285,13 @@ impl Tool for TheFuck {
     const NAME: &'static str = "thefuck";
 
     type Error = io::Error;
-
     type Args = TheFuckArgs;
-
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Fix a command automatically, when you need to fix command, you should try it before fixing yourself, but be aware whether it fits user's requirement.".into(),
+            description: "Fix a command automatically.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -380,18 +306,13 @@ impl Tool for TheFuck {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let command = args.command;
-        let Ok(thefuck_program) = which::which("thefuck") else {
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "thefuck program not found, this tool is not available now.",
-            ))?
-        };
+        let thefuck_program = which::which("thefuck")
+            .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "thefuck program not found"))?;
         let output = tokio::process::Command::new(thefuck_program)
             .env("TF_SHELL", &self.shell_name)
             .env("TF_ALIAS", "fuck")
             .env("PYTHONIOENCODING", "utf-8")
-            .arg(command)
+            .arg(args.command)
             .arg("THEFUCK_ARGUMENT_PLACEHOLDER")
             .arg("--yeah")
             .output()
@@ -404,38 +325,33 @@ impl Tool for TheFuck {
     }
 }
 
-/// 结束输出, 给定输出结果
-pub struct FinishResponse;
+pub struct SubmitCommands;
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct FinishResponseItem {
-    pub content: String,
-    pub desc: String,
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct CommandCandidate {
+    pub command: String,
+    pub summary: String,
 }
 
-/// 输出结果
 #[derive(serde::Deserialize)]
-pub struct FinishResponseArgs {
-    pub results: Vec<FinishResponseItem>,
+pub struct SubmitCommandsArgs {
+    pub results: Vec<CommandCandidate>,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum NoError {}
 
-impl Tool for FinishResponse {
-    const NAME: &'static str = "finish_response";
+impl Tool for SubmitCommands {
+    const NAME: &'static str = "submit_commands";
 
     type Error = NoError;
-
-    type Args = FinishResponseArgs;
-
+    type Args = SubmitCommandsArgs;
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "The mandatory tool used to finalize the interaction and present the generated answer(s) to the user. \
-                Input should be a list of string segments forming the complete, final response.".into(),
+            description: "Finalize the interaction and submit shell command candidates as direct shell input, without shell wrapper invocations.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -443,21 +359,18 @@ impl Tool for FinishResponse {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "description": "One item of the response.",
                             "properties": {
-                                "content": {
+                                "command": {
                                     "type": "string",
-                                    "description": "The content of the response.",
+                                    "description": "Executable shell input exactly as typed inside the shell. Do not wrap it with bash -c or similar shell launchers."
                                 },
-                                "desc": {
+                                "summary": {
                                     "type": "string",
-                                    "description": "Simple description of the content. Few words would be enough. Describing the difference between other choices."
+                                    "description": "Short summary of what this candidate does."
                                 }
                             },
-                            "required": ["content", "desc"]
-                        },
-                        "description": "A list of string segments that collectively form the complete, \
-                            formatted final answer to the user's request."
+                            "required": ["command", "summary"]
+                        }
                     }
                 },
                 "required": ["results"],
@@ -466,25 +379,19 @@ impl Tool for FinishResponse {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // 在 stream_prompt 的输出被监听.
         Ok("ok".into())
     }
 }
 
-/// 获取 CLI 帮助内容, 不过不能保证执行的命令一定是安全的.
 pub struct DangerousHelp;
 
 #[derive(serde::Deserialize)]
 pub struct DangerousHelpArgs {
-    /// 要执行 `--help` 的程序, 可以使用 PATH 中的程序而不提供绝对路径.
     program: PathBuf,
-    /// 命令参数
     #[serde(default)]
     args: Vec<String>,
-    /// 指定行开始返回内容, 为 [`None`] 则默认为 0 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// 读取指定行数, 为 [`None`] 则默认为 50 行.
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
@@ -493,48 +400,32 @@ impl Tool for DangerousHelp {
     const NAME: &'static str = "dangerous_help";
 
     type Error = io::Error;
-
     type Args = DangerousHelpArgs;
-
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Strictly for RETRIEVING and READING CLI help documentation or manuals. \
-                DO NOT execute functional commands (e.g., do not convert files, delete data, or run tasks). \
-                Your goal is to find flags like '--help', '-h', 'help <subcommand>', or 'man'. \
-                If you need to know how to use cli, call this with '--help', '--help=topic' or any help concerning flags, \
-                NEVER call it with operational arguments. \
-                Don't read too many lines at a time, \
-                call this multiple times to scan for the messages you need."
-                .into(),
+            description: "Retrieve cli help docs when normal help lookup is insufficient.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "args": {
                         "type": "array",
-                        "items": {
-                            "type": "string",
-                            "description": "One argument"
-                        },
-                        "description": r#"ONLY help-related flags. Examples: ['--help'], ['-h'], ['help'], ['--usage']. \
-                            Forbidden: any flags that perform actual file processing or system changes."#
+                        "items": {"type": "string"},
+                        "description": "Only help-related arguments."
                     },
                     "program": {
                         "type": "string",
-                        "description": "The program path you want to get help, \
-                            program in the PATH, \
-                            relative path and absolute path are available."
+                        "description": "Program path or program name in PATH."
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": "Skip this many lines before reading."
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                        "description": "Read this many lines."
                     }
                 },
                 "required": ["program"],
@@ -559,17 +450,19 @@ impl Tool for DangerousHelp {
         Ok(format!(
             "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
             start_line,
-            read_lines + start_line - 1,
+            read_lines + start_line.saturating_sub(1),
             String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>(),
+                .collect::<Vec<_>>()
+                .join("\n"),
             String::from_utf8_lossy(&output.stderr)
                 .lines()
                 .skip(start_line)
                 .take(read_lines)
-                .collect::<String>()
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
     }
 }
@@ -583,11 +476,10 @@ mod test {
 
     #[tokio::test]
     async fn man() {
-        tracing_subscriber::fmt()
+        let _ = tracing_subscriber::fmt()
             .with_max_level(Level::DEBUG)
-            .init();
+            .try_init();
         let man = Man;
-        // 需要使用类似 ffmpeg 或者其他 man 内容过长的内容进行测试, 测试会不会进入死锁.
         man.call(ManArgs {
             entry: "ffmpeg".to_string(),
             read_lines: 50,
