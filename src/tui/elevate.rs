@@ -10,8 +10,8 @@ use ratatui::{
     prelude::*,
     widgets::{Block, BorderType, Padding, Paragraph, Wrap},
 };
-use tracing::{info, warn};
 use ratatui_textarea::TextArea;
+use tracing::{info, warn};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::terminal::InlineTerminal;

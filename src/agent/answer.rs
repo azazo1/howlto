@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
@@ -17,7 +18,9 @@ use rig_core::client::CompletionClient;
 use rig_core::completion::Usage;
 use rig_core::message::{Message, ToolResultContent};
 use rig_core::providers::openai::{self, CompletionModel};
-use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
+use rig_core::streaming::{
+    StreamedAssistantContent, StreamedUserContent, StreamingChat, ToolCallDeltaContent,
+};
 use rig_core::tool::{Tool, ToolDyn};
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
@@ -271,6 +274,7 @@ impl AnswerAgent {
 
         let mut output = None;
         let mut answers: Option<AnswerArgs> = None;
+        let mut streaming_tool_call_ids = HashSet::new();
         let scroll = Arc::new(ScrolliingMessage::new(40));
         let finished = Arc::new(AtomicBool::new(false));
         let span_title = span_title.unwrap_or_default();
@@ -309,16 +313,37 @@ impl AnswerAgent {
                     Text(text) => {
                         scroll.push(text.text).await;
                     }
-                    ToolCall { tool_call, .. } => {
+                    ToolCall {
+                        tool_call,
+                        internal_call_id,
+                    } => {
                         info!(
                             "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
+                        if streaming_tool_call_ids.remove(&internal_call_id) {
+                            scroll.push("\n".to_string()).await;
+                        }
                         if tool_call.function.name == Answer::NAME {
                             // todo 提供一个激进的选项, 当 Answer 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
                             answers =
                                 Some(serde_json::from_value(tool_call.function.arguments).unwrap());
                             break;
+                        }
+                    }
+                    ToolCallDelta {
+                        internal_call_id,
+                        content,
+                        ..
+                    } => {
+                        streaming_tool_call_ids.insert(internal_call_id);
+                        match content {
+                            ToolCallDeltaContent::Name(name) => {
+                                scroll.push(format!("Toolcall: {name} - ")).await;
+                            }
+                            ToolCallDeltaContent::Delta(delta) => {
+                                scroll.push(delta).await;
+                            }
                         }
                     }
                     Reasoning(reasoning) => {
@@ -341,6 +366,9 @@ impl AnswerAgent {
                                     .collect(),
                             )
                             .await;
+                    }
+                    ReasoningDelta { reasoning, .. } => {
+                        scroll.push(reasoning).await;
                     }
                     _ => (),
                 },

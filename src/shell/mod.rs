@@ -169,8 +169,7 @@ impl Shell {
 
     /// 获取当前 shell 的字符串表示和可执行文件路径.
     pub fn detect_shell() -> Shell {
-        let default_shell_path: PathBuf =
-            std::env::var("SHELL").unwrap_or("/bin/sh".into()).into();
+        let default_shell_path: PathBuf = std::env::var("SHELL").unwrap_or("/bin/sh".into()).into();
         let default_shell_name = default_shell_path
             .file_name()
             .and_then(std::ffi::OsStr::to_str)

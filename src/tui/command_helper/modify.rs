@@ -9,12 +9,12 @@ use ratatui::{
     prelude::*,
     widgets::{Block, BorderType},
 };
+use ratatui_textarea::TextArea;
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
-use ratatui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
