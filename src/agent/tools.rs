@@ -1,10 +1,17 @@
-use std::{io::ErrorKind, path::Path, path::PathBuf, process::Stdio};
+use std::{
+    future::Future,
+    io::ErrorKind,
+    path::Path,
+    path::PathBuf,
+    process::{Output, Stdio},
+    time::Duration,
+};
 
 use rig_core::{completion::ToolDefinition, tool::Tool};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::io;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::agent::sandbox::{self, Sandbox};
 use crate::tui::elevate;
@@ -36,6 +43,7 @@ fn format_paged_output(
 
 const DEFAULT_START_LINE: usize = 0;
 const DEFAULT_READ_LINES: usize = 500;
+const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(20);
 
 fn default_start_line() -> usize {
     DEFAULT_START_LINE
@@ -43,6 +51,52 @@ fn default_start_line() -> usize {
 
 fn default_read_lines() -> usize {
     DEFAULT_READ_LINES
+}
+
+async fn with_tool_timeout<T, F>(
+    tool_name: &'static str,
+    command_display: String,
+    timeout_duration: Duration,
+    future: F,
+) -> io::Result<T>
+where
+    F: Future<Output = io::Result<T>>,
+{
+    match tokio::time::timeout(timeout_duration, future).await {
+        Ok(result) => result,
+        Err(_) => {
+            warn!(
+                target: "tool-command",
+                tool = tool_name,
+                command = %command_display,
+                timeout_secs = timeout_duration.as_secs(),
+                "tool command timed out"
+            );
+            Err(io::Error::new(
+                ErrorKind::TimedOut,
+                format!(
+                    "{tool_name} command timed out after {}s, it may need an interactive terminal or may not exit",
+                    timeout_duration.as_secs()
+                ),
+            ))
+        }
+    }
+}
+
+async fn command_output_with_timeout(
+    mut command: tokio::process::Command,
+    tool_name: &'static str,
+    timeout_duration: Duration,
+) -> io::Result<Output> {
+    command.kill_on_drop(true);
+    let command_display = format!("{command:?}");
+    with_tool_timeout(
+        tool_name,
+        command_display,
+        timeout_duration,
+        command.output(),
+    )
+    .await
 }
 
 /// 一条命令的调用方式, 是 [`Explore`] / [`Elevate`] 共享的参数,
@@ -237,7 +291,7 @@ impl Tool for Explore {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         debug!(target: "tool-explore", sandbox = sandbox.name(), "Calling command {:?}...", command);
-        let output = command.output().await?;
+        let output = command_output_with_timeout(command, Self::NAME, DEFAULT_TOOL_TIMEOUT).await?;
         Ok(format_paged_output(
             &output.stdout,
             &output.stderr,
@@ -361,23 +415,47 @@ impl Tool for Man {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
 
+        command1.kill_on_drop(true);
+        command2.kill_on_drop(true);
+        let command_display = format!("{command1:?} | {command2:?}");
         debug!(target: "tool-man", "Calling command {:?} | {:?}...", command1, command2);
 
-        let mut child1 = command1.spawn()?;
-        let mut child2 = command2.spawn()?;
-        tokio::io::copy(
-            &mut child1.stdout.take().unwrap(),
-            &mut child2.stdin.take().unwrap(),
+        let (stdout, stderr) = with_tool_timeout(
+            Self::NAME,
+            command_display,
+            DEFAULT_TOOL_TIMEOUT,
+            async move {
+                let mut child1 = command1.spawn()?;
+                let mut child2 = command2.spawn()?;
+                let mut child1_stdout = child1.stdout.take().unwrap();
+                let mut child1_stderr = child1.stderr.take().unwrap();
+                let mut child2_stdin = child2.stdin.take().unwrap();
+                let mut child2_stdout = child2.stdout.take().unwrap();
+
+                let pipe_stdout = async move {
+                    tokio::io::copy(&mut child1_stdout, &mut child2_stdin).await?;
+                    drop(child2_stdin);
+                    Ok::<_, io::Error>(())
+                };
+                let read_stderr = async move {
+                    let mut stderr = Vec::new();
+                    tokio::io::copy(&mut child1_stderr, &mut stderr).await?;
+                    Ok::<_, io::Error>(stderr)
+                };
+                let read_stdout = async move {
+                    let mut stdout = Vec::new();
+                    tokio::io::copy(&mut child2_stdout, &mut stdout).await?;
+                    Ok::<_, io::Error>(stdout)
+                };
+
+                let (_, stderr, stdout) =
+                    tokio::try_join!(pipe_stdout, read_stderr, read_stdout)?;
+                child1.wait().await?;
+                child2.wait().await?;
+                Ok((stdout, stderr))
+            },
         )
         .await?;
-        let mut stderr = Vec::new();
-        tokio::io::copy(child1.stderr.as_mut().unwrap(), &mut stderr).await?;
-
-        // 这里要边调用边读取其输出, 不然过长的内容会导致子程序认为输出缓冲区满了停止输出, 进入等待, 导致死锁.
-        let mut stdout = Vec::new();
-        tokio::io::copy(child2.stdout.as_mut().unwrap(), &mut stdout).await?;
-
-        child2.wait().await?;
         let start_line = args.start_line;
         let read_lines = args.read_lines;
         Ok(format!(
@@ -455,7 +533,7 @@ impl Tool for Tldr {
 
         debug!(target: "tool-tldr", "Calling command: {:?}...", command);
 
-        let output = command.output().await?;
+        let output = command_output_with_timeout(command, Self::NAME, DEFAULT_TOOL_TIMEOUT).await?;
         Ok(format!(
             "stdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stdout),
@@ -507,22 +585,22 @@ impl Tool for TheFuck {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let command = args.command;
+        let original_command = args.command;
         let Ok(thefuck_program) = which::which("thefuck") else {
             Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "thefuck program not found, this tool is not available now.",
             ))?
         };
-        let output = tokio::process::Command::new(thefuck_program)
+        let mut command = tokio::process::Command::new(thefuck_program);
+        command
             .env("TF_SHELL", &self.shell_name)
             .env("TF_ALIAS", "fuck")
             .env("PYTHONIOENCODING", "utf-8")
-            .arg(command)
+            .arg(original_command)
             .arg("THEFUCK_ARGUMENT_PLACEHOLDER")
-            .arg("--yeah")
-            .output()
-            .await?;
+            .arg("--yeah");
+        let output = command_output_with_timeout(command, Self::NAME, DEFAULT_TOOL_TIMEOUT).await?;
         Ok(format!(
             "stdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stdout),
@@ -765,7 +843,7 @@ impl Tool for Elevate {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         debug!(target: "tool-elevate", "Calling command {:?}...", command);
-        let output = command.output().await?;
+        let output = command_output_with_timeout(command, Self::NAME, DEFAULT_TOOL_TIMEOUT).await?;
         Ok(format_paged_output(
             &output.stdout,
             &output.stderr,
@@ -777,10 +855,28 @@ impl Tool for Elevate {
 
 #[cfg(test)]
 mod test {
+    use std::{io, time::Duration};
+
     use rig_core::tool::Tool;
     use tracing::Level;
 
-    use crate::agent::tools::{Man, ManArgs};
+    use crate::agent::tools::{Man, ManArgs, with_tool_timeout};
+
+    #[tokio::test]
+    async fn tool_timeout_returns_timed_out_error() {
+        let result = with_tool_timeout(
+            "test",
+            "slow future".to_string(),
+            Duration::from_millis(1),
+            async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                Ok::<_, io::Error>(())
+            },
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    }
 
     #[tokio::test]
     async fn man() {

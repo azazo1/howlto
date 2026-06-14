@@ -63,7 +63,11 @@ impl ScrolliingMessage {
     }
 
     async fn push(&self, appendant: String) {
-        let display_appendant = sanitize_scroll_message(&appendant);
+        self.push_with_display(appendant.clone(), appendant).await;
+    }
+
+    async fn push_with_display(&self, appendant: String, display_appendant: String) {
+        let display_appendant = sanitize_scroll_message(&display_appendant);
         let mut message = self.message.write().await;
         *message += &appendant;
         let mut display_message = self.display_message.write().await;
@@ -361,13 +365,18 @@ impl AnswerAgent {
                             tool_call.function.name, tool_call.function.arguments
                         );
                         if streaming_tool_call_ids.remove(&internal_call_id) {
-                            scroll.push("\n".to_string()).await;
+                            scroll
+                                .push_with_display("\n".to_string(), "\n".to_string())
+                                .await;
                         } else {
                             scroll
-                                .push(format!(
-                                    "\nToolcall: {} - {}\n",
-                                    tool_call.function.name, tool_call.function.arguments
-                                ))
+                                .push_with_display(
+                                    format!(
+                                        "\nToolcall: {} - {}\n",
+                                        tool_call.function.name, tool_call.function.arguments
+                                    ),
+                                    format!("\nToolcall: {}\n", tool_call.function.name),
+                                )
                                 .await;
                         }
                         if tool_call.function.name == Answer::NAME {
@@ -384,10 +393,15 @@ impl AnswerAgent {
                         streaming_tool_call_ids.insert(internal_call_id);
                         match content {
                             ToolCallDeltaContent::Name(name) => {
-                                scroll.push(format!("\nToolcall: {name} - ")).await;
+                                scroll
+                                    .push_with_display(
+                                        format!("\nToolcall: {name} - "),
+                                        format!("\nToolcall: {name}"),
+                                    )
+                                    .await;
                             }
                             ToolCallDeltaContent::Delta(delta) => {
-                                scroll.push(delta).await;
+                                scroll.push_with_display(delta, String::new()).await;
                             }
                         }
                     }
@@ -656,5 +670,15 @@ mod test {
         sm.push(raw.into()).await;
 
         assert_eq!(sm.message().await, raw);
+    }
+
+    #[tokio::test]
+    async fn scroll_message_can_hide_display_appendant() {
+        let sm = ScrolliingMessage::new(usize::MAX);
+        sm.push_with_display("raw json args".into(), String::new())
+            .await;
+
+        assert_eq!(sm.message().await, "raw json args");
+        assert_eq!(sm.scroll(usize::MAX).await, "");
     }
 }
