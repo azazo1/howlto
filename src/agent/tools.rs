@@ -589,7 +589,7 @@ impl Tool for Answer {
                 The `answer` field is an EXCLUSIVE CHOICE between two modes (set `mode` to pick one): \
                 `commands` (a list of shell commands) \
                 OR `text` (a single markdown/plain-text). \
-                Prefer `commands` whenever a command can answer the question."
+                Follow the system instructions to choose the mode."
                 .into(),
             parameters: json!({
                 "type": "object",
