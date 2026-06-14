@@ -31,16 +31,13 @@
 - [ ] 命令生成之后回车直接进入 shell 输入框 (需要 shell 集成脚本).
 - [ ] 自动识别提示词, 对应使用不同的 agent 和 profile: chat / command / explain.
   - [ ] 并提供参数强行指定某些模式.
-- [ ] windows cmd / powershell / pwsh 测试.
-  - [ ] 适配非 `--help` 获取帮助的方法.
-  - [ ] windows 下没有 `man`, 寻找替代实现.
 - [ ] gemini api.
 - [ ] 描述选中的命令 (ShellCommandGenAgent).
 - [ ] feat: 执行之后根据错误码和输出的内容进行分析, 重新更改 command.
 - [ ] 插件(流程控制) / mcp
 - [ ] 编写一些测试 prompts, 用于检测 profile 更改之后是否符合要求.
-  - [ ] macos, linux, windows 等各平台下的效果
-  - [ ] cmd, powershell, fish, nushell, bash 等各个 shell 下的命令正确性
+  - [ ] macos, linux 等各平台下的效果
+  - [ ] fish, nushell, bash 等各个 shell 下的命令正确性
 - [ ] `-x` 参数直接执行第一个候选命令.
 - [ ] translate agent (stdin / text file).
 - [ ] help/man tool: 搜索特定的 pattern, 增加阅读的效率.

@@ -95,9 +95,16 @@ shell 集成之后, 可以使用以下 features:
 
 只有 macOS Apple Silicon 被测试运行过, 其他平台上的使用如遇问题欢迎提出 issues.
 
-虽然该工具可在 Windows 环境下运行, 但在 Unix 系统 (如 macOS 或 Linux) 中的表现更为出色.
-为了获得最佳交互体验, 强烈建议在 Unix 系统配合 fish shell 使用.
-Windows 可以在 [WSL](https://learn.microsoft.com/zh-cn/windows/wsl/install) 下使用获取最佳的使用体验.
+### 平台支持情况
+
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+| **macOS** (Apple Silicon / Intel) | ✅ 主要测试平台 | 沙箱后端 Seatbelt (`sandbox-exec`). |
+| **Linux** | ✅ 已支持 | 沙箱后端 Bubblewrap (`bwrap`), 需系统已安装 `bwrap`. |
+| **Windows (原生)** | ⚠️ **当前无法编译** | 只读沙箱后端 (macOS Seatbelt / Linux Bubblewrap) 仅在 Unix 可用, 在 Windows 下会触发 [`compile_error!`](src/agent/sandbox.rs) 直接编译失败, 因此原生 Windows 暂时**无法构建/运行**. shell 集成也仅实现了 Unix 系 shell (fish/bash/zsh/nushell), 待沙箱后端与 Windows shell 集成落地后才能整体可用 (见 [Todo](docs/todo.md)). |
+| **Windows (WSL)** | ✅ 推荐 | 在 [WSL](https://learn.microsoft.com/zh-cn/windows/wsl/install) 内按 Linux 方式使用即可获得最佳体验, 配合 fish shell 效果最好. |
+
+> 项目对 Unix 系 (macOS / Linux) 的支持最为完善, 强烈建议在 Unix 系配合 fish shell 使用.
 
 ## Referencing
 

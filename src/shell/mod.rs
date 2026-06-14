@@ -13,7 +13,6 @@ mod init_scripts {
     const BASH: &str = include_str!("bash/init.bash");
     const ZSH: &str = include_str!("zsh/init.zsh");
     const NUSHELL: &str = include_str!("nushell/init.nu");
-    const CMD: &str = include_str!("cmd/init.lua");
 
     fn init_script(template: &str) -> Result<String> {
         // shell 函数 __howlto_invoke
@@ -48,10 +47,6 @@ mod init_scripts {
     pub(crate) fn nushell() -> Result<String> {
         init_script(NUSHELL)
     }
-
-    pub(crate) fn cmd() -> Result<String> {
-        init_script(CMD)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,9 +55,6 @@ enum Integration {
     Bash,
     Zsh,
     Nushell,
-    Cmd,
-    PowerShell,
-    Pwsh,
     Elvish,
     Xonsh,
 }
@@ -78,10 +70,7 @@ impl FromStr for Integration {
             "zsh" => Ok(Zsh),
             "nu" => Ok(Nushell),
             "nu.exe" => Ok(Nushell),
-            "cmd.exe" => Ok(Cmd),
-            "pwsh.exe" => Ok(Pwsh),
             // todo 判断这些名称是否正确.
-            "powershell.exe" => Ok(PowerShell),
             "elvish" => Ok(Elvish),
             "xonsh" => Ok(Xonsh),
             _ => Err(()),
@@ -96,9 +85,6 @@ impl Integration {
             Self::Bash => init_scripts::bash(),
             Self::Zsh => init_scripts::zsh(),
             Self::Nushell => init_scripts::nushell(),
-            Self::Cmd => init_scripts::cmd(),
-            Self::PowerShell => todo!(),
-            Self::Pwsh => todo!(),
             Self::Elvish => todo!(),
             Self::Xonsh => todo!(),
         }
@@ -125,11 +111,6 @@ const SHELLS: phf::Set<&'static str> = phf::phf_set!(
     "dash",  // Debian Almquist Shell (轻量级，常作为 /bin/sh)
     "fish",  // Friendly Interactive Shell (交互友好)
     "pdksh", // Public Domain Korn Shell (ksh 的早期和替代实现)
-    // ------------------------------------
-    // Windows 及其跨平台 Shells (已包含)
-    "cmd",        // Command Prompt (Windows 传统命令行)
-    "powershell", // Windows PowerShell (基于 .NET，处理对象)
-    "pwsh",       // PowerShell Core (跨平台版本)
     // ------------------------------------
     // 嵌入式和特殊 Shells (补充了 busybox)
     "ash",     // Almquist Shell (轻量级，常用于嵌入式系统)
@@ -188,13 +169,8 @@ impl Shell {
 
     /// 获取当前 shell 的字符串表示和可执行文件路径.
     pub fn detect_shell() -> Shell {
-        let default_shell_path: PathBuf = if cfg!(unix) {
-            std::env::var("SHELL").unwrap_or("/bin/sh".into()).into()
-        } else if cfg!(windows) {
-            which::which("cmd.exe").unwrap_or("C:/Windows/System32/cmd.exe".into())
-        } else {
-            PathBuf::new()
-        };
+        let default_shell_path: PathBuf =
+            std::env::var("SHELL").unwrap_or("/bin/sh".into()).into();
         let default_shell_name = default_shell_path
             .file_name()
             .and_then(std::ffi::OsStr::to_str)
