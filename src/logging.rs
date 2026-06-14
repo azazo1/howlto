@@ -12,22 +12,20 @@ use tracing_subscriber::{EnvFilter, Layer};
 use tokio::fs;
 
 fn file_filter(metadata: &Metadata) -> bool {
-    if let Some(module) = metadata.module_path()
-        && module.starts_with("rig::")
-    {
-        return false;
-    }
-    true
+    !is_rig_metadata(metadata)
 }
 
 fn stderr_filter(metadata: &Metadata) -> bool {
-    // 忽略 rig 的 tracing, 因为它每次调用 api 都会输出 INFO, 不符合使用常理.
-    if let Some(module) = metadata.module_path()
-        && module.starts_with("rig::")
-    {
-        return false;
-    }
-    true
+    // 忽略 rig_core 的 tracing, 因为它每次调用 api 都会输出 INFO, 不符合使用常理.
+    !is_rig_metadata(metadata)
+}
+
+fn is_rig_metadata(metadata: &Metadata) -> bool {
+    let is_rig_module = metadata
+        .module_path()
+        .is_some_and(|module| module.starts_with("rig_core::"));
+    let target = metadata.target();
+    is_rig_module || target.starts_with("rig_core::")
 }
 
 /// 初始化日志输出

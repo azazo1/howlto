@@ -139,6 +139,26 @@ mod tests {
         use std::process::Stdio;
         let sb = detect().expect("macos should have seatbelt backend");
         assert_eq!(sb.name(), "seatbelt");
+        // Skip on hosts where macOS denies sandbox-exec itself.
+        let mut probe = sb
+            .wrap(Path::new("/bin/echo"), &["seatbelt-preflight".into()])
+            .unwrap();
+        probe
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let probe_out = probe.output().await.unwrap();
+        if !probe_out.status.success()
+            && String::from_utf8_lossy(&probe_out.stderr).contains("sandbox_apply")
+        {
+            return;
+        }
+        assert!(
+            probe_out.status.success(),
+            "seatbelt preflight should succeed, status={:?}, stderr={}",
+            probe_out.status,
+            String::from_utf8_lossy(&probe_out.stderr)
+        );
         // 写文件应被拒.
         let tmp = format!("/tmp/howlto_sb_test_{}", std::process::id());
         let mut cmd = sb

@@ -12,13 +12,13 @@ use crate::config::profile::AnswerProfile;
 use crate::error::{Error, Result};
 use crate::shell::Shell;
 use reqwest::header::HeaderMap;
-use rig::agent::{Agent as RigAgent, MultiTurnStreamItem};
-use rig::client::CompletionClient;
-use rig::completion::Usage;
-use rig::message::{Message, ToolResultContent};
-use rig::providers::openai::{self, CompletionModel};
-use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
-use rig::tool::Tool;
+use rig_core::agent::{Agent as RigAgent, MultiTurnStreamItem};
+use rig_core::client::CompletionClient;
+use rig_core::completion::Usage;
+use rig_core::message::{Message, ToolResultContent};
+use rig_core::providers::openai::{self, CompletionModel};
+use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
+use rig_core::tool::{Tool, ToolDyn};
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, info_span, warn};
@@ -166,11 +166,7 @@ fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
         (None, None) => None,
         (None, Some(b)) => Some(b),
         (Some(a), None) => Some(a),
-        (Some(a), Some(b)) => Some(Usage {
-            input_tokens: a.input_tokens + b.input_tokens,
-            output_tokens: a.output_tokens + b.output_tokens,
-            total_tokens: a.total_tokens + b.total_tokens,
-        }),
+        (Some(a), Some(b)) => Some(a + b),
     }
 }
 
@@ -216,7 +212,7 @@ impl AnswerAgent {
             .build()?
             .completions_api()
             .completion_model(&config.llm.model);
-        let mut builder = rig::agent::AgentBuilderSimple::new(model).preamble(
+        let mut builder = rig_core::agent::AgentBuilder::new(model).preamble(
             &profile
                 .generate()
                 .os(os)
@@ -232,28 +228,29 @@ impl AnswerAgent {
         if let Some(temperature) = config.llm.temperature {
             builder = builder.temperature(temperature);
         };
+        let mut tools: Vec<Box<dyn ToolDyn>> = Vec::new();
         if config.agent.use_tool_man {
-            builder = builder.tool(Man);
+            tools.push(Box::new(Man));
         }
         if config.agent.use_tool_explore {
-            builder = builder.tool(Explore::new(shell.path().to_path_buf()));
+            tools.push(Box::new(Explore::new(shell.path().to_path_buf())));
         }
         if config.agent.use_tool_tldr {
-            builder = builder.tool(Tldr);
+            tools.push(Box::new(Tldr));
         }
         if config.agent.use_tool_thefuck {
-            builder = builder.tool(TheFuck::new(shell.name().to_string()));
+            tools.push(Box::new(TheFuck::new(shell.name().to_string())));
         }
         if config.agent.use_tool_elevate {
-            builder = builder.tool(Elevate::new(shell.path().to_path_buf()));
+            tools.push(Box::new(Elevate::new(shell.path().to_path_buf())));
         }
-        builder = builder.tool(Answer);
+        tools.push(Box::new(Answer));
 
         info!("Created.");
         Ok(Self {
             config,
             profile,
-            agent: builder.build(),
+            agent: builder.tools(tools).build(),
         })
     }
 
@@ -312,7 +309,7 @@ impl AnswerAgent {
                     Text(text) => {
                         scroll.push(text.text).await;
                     }
-                    ToolCall(tool_call) => {
+                    ToolCall { tool_call, .. } => {
                         info!(
                             "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
@@ -325,13 +322,31 @@ impl AnswerAgent {
                         }
                     }
                     Reasoning(reasoning) => {
-                        scroll.push(reasoning.reasoning.into_iter().collect()).await;
+                        scroll
+                            .push(
+                                reasoning
+                                    .content
+                                    .into_iter()
+                                    .map(|c| match c {
+                                        rig_core::message::ReasoningContent::Text {
+                                            text, ..
+                                        } => text,
+                                        rig_core::message::ReasoningContent::Encrypted(s) => s,
+                                        rig_core::message::ReasoningContent::Redacted { data } => {
+                                            data
+                                        }
+                                        rig_core::message::ReasoningContent::Summary(s) => s,
+                                        _ => String::new(),
+                                    })
+                                    .collect(),
+                            )
+                            .await;
                     }
                     _ => (),
                 },
                 StreamUserItem(content) => {
-                    let StreamedUserContent::ToolResult(rst) = content;
-                    for content in rst.content {
+                    let StreamedUserContent::ToolResult { tool_result, .. } = content;
+                    for content in tool_result.content {
                         if let ToolResultContent::Text(text) = content {
                             debug!(
                                 "Tool result: {}",
@@ -349,7 +364,14 @@ impl AnswerAgent {
                     debug!("Usage: {:?}", final_response.usage());
                     output = Some(final_response);
                 }
-                _ => warn!("Unknown stream chunk."),
+                CompletionCall(completion_call) => {
+                    debug!(
+                        call_index = completion_call.call_index,
+                        usage = ?completion_call.usage,
+                        "Completion call finished."
+                    );
+                }
+                _ => warn!("Unhandled stream chunk."),
             }
         }
         finished.store(true, Ordering::Relaxed);

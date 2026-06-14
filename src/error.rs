@@ -11,7 +11,7 @@ pub enum Error {
     #[error("Profile {profile} not found.")]
     ProfileNotFound { profile: &'static str },
     #[error(transparent)]
-    RigError(#[from] rig::http_client::Error),
+    RigError(#[from] rig_core::http_client::Error),
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
     #[error("Streaming, {0}")]

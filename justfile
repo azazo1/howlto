@@ -1,4 +1,5 @@
-default: howlto
+default:
+    @just --list
 
 profile := "dev"
 

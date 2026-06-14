@@ -1,6 +1,6 @@
 use std::{io::ErrorKind, path::Path, path::PathBuf, process::Stdio};
 
-use rig::{completion::ToolDefinition, tool::Tool};
+use rig_core::{completion::ToolDefinition, tool::Tool};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::io;
@@ -777,7 +777,7 @@ impl Tool for Elevate {
 
 #[cfg(test)]
 mod test {
-    use rig::tool::Tool;
+    use rig_core::tool::Tool;
     use tracing::Level;
 
     use crate::agent::tools::{Man, ManArgs};

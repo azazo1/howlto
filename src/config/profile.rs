@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use rig::tool::Tool;
+use rig_core::tool::Tool;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::tools::Answer;

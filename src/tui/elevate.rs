@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, BorderType, Padding, Paragraph, Wrap},
 };
 use tracing::{info, warn};
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::terminal::InlineTerminal;
@@ -274,17 +274,18 @@ pub(crate) async fn confirm_elevate(display_command: &str) -> Result<(), String>
         format!("Failed to initialize confirmation dialog: {e}")
     })?;
 
-    // 暂时禁用 tracing_indicatif 进度条
-    let decision = tokio::task::spawn_blocking(|| {
+    // 暂时禁用 tracing_indicatif 进度条.
+    // 使用 block_in_place 而非 spawn_blocking: ratatui-textarea 0.9 的 TextArea 内部持有非
+    // Send 的 `dyn CellEffect`, 不满足 spawn_blocking 闭包的 Send 约束. block_in_place 在
+    // multi-thread runtime 上就地阻塞当前 worker 线程, 不需要跨线程传递 app.
+    let decision = tokio::task::block_in_place(|| {
         tracing_indicatif::suspend_tracing_indicatif(|| {
             app.run().map_err(|e| {
                 warn!(error = %e, "elevation confirmation dialog exited with error");
                 format!("Failed to read confirmation input: {e}")
             })
         })
-    })
-    .await
-    .unwrap()?;
+    })?;
 
     match decision {
         AppDecision::Approve => {
