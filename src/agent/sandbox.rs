@@ -26,6 +26,7 @@ use tokio::process::Command;
 #[cfg(target_os = "macos")]
 const SEATBELT_PROFILE: &str = "\
 (version 1)\n\
+ (allow file-write-data (literal \"/dev/null\"))\n\
  (deny file-write*)\n\
  (deny network*)\n\
  (allow default)\n";
@@ -158,6 +159,23 @@ mod tests {
             "seatbelt preflight should succeed, status={:?}, stderr={}",
             probe_out.status,
             String::from_utf8_lossy(&probe_out.stderr)
+        );
+        let mut null_cmd = sb
+            .wrap(
+                Path::new("/bin/sh"),
+                &["-c".into(), "echo x > /dev/null".into()],
+            )
+            .unwrap();
+        null_cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let null_out = null_cmd.output().await.unwrap();
+        assert!(
+            null_out.status.success(),
+            "write to /dev/null should be allowed, status={:?}, stderr={}",
+            null_out.status,
+            String::from_utf8_lossy(&null_out.stderr)
         );
         // 写文件应被拒.
         let tmp = format!("/tmp/howlto_sb_test_{}", std::process::id());

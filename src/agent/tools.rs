@@ -226,12 +226,12 @@ impl Tool for Explore {
         // 沙箱层接收的是真正的 (program, args): shell 模式下即 (shell, [-c, command]).
         let (program, args_for_sandbox) = match args.invocation.clone() {
             Invocation::Program { program, args } => (program, args),
-            Invocation::Shell { command } => (
-                self.shell_path.clone(),
-                vec!["-c".to_string(), command],
-            ),
+            Invocation::Shell { command } => {
+                (self.shell_path.clone(), vec!["-c".to_string(), command])
+            }
         };
         let mut command = sandbox.wrap(&program, &args_for_sandbox)?;
+        command.env("GIT_OPTIONAL_LOCKS", "0");
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
