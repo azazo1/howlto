@@ -68,15 +68,15 @@ pub struct AgentConfig {
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default)]
-    pub shell_command_gen: ShellCommandGenConfig,
+    pub answer: AnswerConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ShellCommandGenConfig {
-    /// Shell Comamnd Gen 输出的命令个数.
+pub struct AnswerConfig {
+    /// Answer agent 输出的命令/回答个数.
     #[serde(default = "default_output_n")]
     pub output_n: u32,
-    /// Shell Command Gen 是否等待输出显示完毕,
+    /// Answer agent 是否等待输出显示完毕,
     #[serde(default = "default_wait_for_output_scrolling")]
     pub wait_for_output_scrolling: bool,
 }
@@ -99,7 +99,7 @@ impl Default for LlmConfig {
     }
 }
 
-impl Default for ShellCommandGenConfig {
+impl Default for AnswerConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }

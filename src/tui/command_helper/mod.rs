@@ -11,7 +11,8 @@ use tokio::{
 use tracing::{debug, info};
 
 use crate::{
-    agent::shell_command_gen::{ModifyOption, ScgAgent, ScgAgentResponse},
+    agent::answer::{AnswerAgent, AnswerAgentResponse, ModifyOption},
+    agent::tools::{AnswerItem, AnswerKind},
     config::{AppConfig, profile::Profiles},
     error::{Error, Result},
     shell::Shell,
@@ -62,8 +63,8 @@ fn copy(text: String) -> Result<()> {
 /// # Returns
 /// 是否有进行修改.
 async fn modify(
-    agent: &ScgAgent,
-    prev_resp: &mut ScgAgentResponse,
+    agent: &AnswerAgent,
+    prev_resp: &mut AnswerAgentResponse,
     command: String,
 ) -> Result<bool> {
     let prompt = modify::App::prompt(command.clone()).await?;
@@ -98,6 +99,66 @@ async fn print_to_input_buffer(
     Ok(())
 }
 
+/// 判断回答是否为纯文本回答 (所有项都是 Text).
+/// 按互斥语义, 纯文本回答预期只有一项, 且无需选择直接输出.
+fn is_text_only_answer(answers: &[AnswerItem]) -> bool {
+    !answers.is_empty() && answers.iter().all(|x| matches!(x.kind, AnswerKind::Text))
+}
+
+/// 在交互模式下直接展示文本回答 (markdown 渲染成带颜色的 ANSI 文本), 不弹选择框.
+fn show_text_answer(answers: &[AnswerItem]) {
+    for item in answers {
+        let text = crate::tui::markdown::render(&item.content);
+        for line in &text.lines {
+            let rendered: String = line.spans.iter().map(span_to_ansi).collect();
+            println!("{rendered}");
+        }
+    }
+}
+
+/// 把 ratatui [`Span`](ratatui::text::Span) 渲染成带 ANSI 样式的字符串 (供 stdout 直接打印).
+fn span_to_ansi(span: &ratatui::text::Span<'_>) -> String {
+    use ratatui::style::{Color, Modifier};
+    let style = span.style;
+    let mut codes: Vec<String> = Vec::new();
+    if let Some(fg) = style.fg {
+        codes.push(match fg {
+            Color::Black => "30".into(),
+            Color::Red => "31".into(),
+            Color::Green => "32".into(),
+            Color::Yellow => "33".into(),
+            Color::Blue => "34".into(),
+            Color::Magenta => "35".into(),
+            Color::Cyan => "36".into(),
+            Color::Gray | Color::DarkGray => "90".into(),
+            Color::LightRed => "91".into(),
+            Color::LightGreen => "92".into(),
+            Color::LightYellow => "93".into(),
+            Color::LightBlue => "94".into(),
+            Color::LightMagenta => "95".into(),
+            Color::LightCyan => "96".into(),
+            Color::White => "97".into(),
+            _ => "0".into(),
+        });
+    }
+    let add = style.add_modifier;
+    if add.contains(Modifier::BOLD) {
+        codes.push("1".into());
+    }
+    if add.contains(Modifier::ITALIC) {
+        codes.push("3".into());
+    }
+    if add.contains(Modifier::CROSSED_OUT) {
+        codes.push("9".into());
+    }
+    let prefix = if codes.is_empty() {
+        String::new()
+    } else {
+        format!("\x1b[{}m", codes.join(";"))
+    };
+    format!("{prefix}{}\x1b[0m", span.content)
+}
+
 #[bon::builder]
 pub async fn run(
     prompt: &str,
@@ -120,8 +181,8 @@ async fn run_internal(
     profiles: Profiles,
     htcmd_file: Option<PathBuf>,
 ) -> Result<()> {
-    let agent = ScgAgent::builder()
-        .profile(profiles.shell_command_gen.clone())
+    let agent = AnswerAgent::builder()
+        .profile(profiles.answer.clone())
         .os(detect_os())
         .shell(shell)
         .config(config)
@@ -132,20 +193,25 @@ async fn run_internal(
         .maybe_attached(attached)
         .call()
         .await?;
-    if plain {
-        println!(
-            "{}",
-            response
-                .commands
+    if is_text_only_answer(&response.answers) {
+        // 纯文本回答: 无需选择, 直接输出 (按互斥语义预期只有一项).
+        if plain {
+            // plain/管道模式: 去掉 markdown 标记的纯文本, 不污染下游.
+            let out: Vec<String> = response
+                .answers
                 .iter()
-                .map(|x| x.content.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    } else if !response.commands.is_empty() {
+                .map(|x| crate::tui::markdown::to_plain_text(&x.content))
+                .collect();
+            println!("{}", out.join("\n"));
+        } else {
+            // 交互模式: 打印带颜色高亮的 markdown 文本.
+            show_text_answer(&response.answers);
+        }
+    } else if !response.answers.is_empty() {
+        // 命令回答 (按互斥语义不应混合 Text): 进选择框.
         let mut response = response;
         loop {
-            let action = select::App::select(response.commands.clone()).await?;
+            let action = select::App::select(response.answers.clone()).await?;
             let mut should_exit = true;
             if let Some(action) = &action {
                 debug!("Select action: {action:?}");
@@ -158,7 +224,7 @@ async fn run_internal(
                     ActionKind::Modify => {
                         should_exit =
                             !modify(&agent, &mut response, action.command.clone()).await?;
-                        should_exit |= response.commands.is_empty();
+                        should_exit |= response.answers.is_empty();
                     }
                 }
             }
@@ -173,26 +239,31 @@ async fn run_internal(
 #[cfg(test)]
 mod test {
     use crate::{
-        agent::tools::FinishResponseItem,
+        agent::tools::{AnswerItem, AnswerKind},
         tui::command_helper::select::{Action, ActionKind},
     };
 
     #[tokio::test]
+    #[ignore = "需要真实 TTY 交互 (手动选择), 用 `cargo test tui -- --ignored --nocapture` 运行"]
     async fn tui() {
         println!("Manually select 3 with Copy action:");
         let action = super::select::App::select(
             [
-                FinishResponseItem {
+                AnswerItem {
                     content: "1".into(),
                     desc: "This is one.".into(),
+                    kind: AnswerKind::Command,
                 },
-                FinishResponseItem {
+                AnswerItem {
                     content: "2".into(),
                     desc: "This is two, which is one plus one.".into(),
+                    kind: AnswerKind::Command,
                 },
-                FinishResponseItem {
+                AnswerItem {
                     content: "3".into(),
-                    desc: "This is three, which is one plus two.\nThat is to say one plus one plus one.".into(),
+                    desc: "This is three, which is one plus two.\nThat is to say one plus one plus one."
+                        .into(),
+                    kind: AnswerKind::Command,
                 },
             ]
             .into(),

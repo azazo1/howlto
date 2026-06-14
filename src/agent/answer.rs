@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agent::tools::{
-    Elevate, Explore, FinishResponse, FinishResponseArgs, FinishResponseItem, Man, TheFuck, Tldr,
+    Answer, AnswerArgs, AnswerItem, Elevate, Explore, Man, TheFuck, Tldr,
 };
 use crate::config::AppConfig;
-use crate::config::profile::ShellComamndGenProfile;
+use crate::config::profile::AnswerProfile;
 use crate::error::{Error, Result};
 use crate::shell::Shell;
 use reqwest::header::HeaderMap;
@@ -113,19 +113,19 @@ impl ScrolliingMessage {
     }
 }
 
-/// Shell Command Generate Agent
-pub struct ScgAgent {
-    profile: ShellComamndGenProfile,
+/// Answer Agent: 解答用户问题, 既可输出 shell 命令, 也可输出纯文本/markdown.
+pub struct AnswerAgent {
+    profile: AnswerProfile,
     config: AppConfig,
     agent: RigAgent<CompletionModel>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ScgAgentResponse {
+pub struct AnswerAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
-    /// agent 做出决策需要执行的命令.
-    pub commands: Vec<FinishResponseItem>,
+    /// agent 做出决策需要输出的回答 (命令或文本).
+    pub answers: Vec<AnswerItem>,
 }
 
 #[derive(Debug)]
@@ -139,7 +139,7 @@ pub struct ModifyOption {
 struct StreamChatStatus {
     output: String,
     usage: Option<Usage>,
-    commands: Option<FinishResponseArgs>,
+    answers: Option<AnswerArgs>,
 }
 
 impl ModifyOption {
@@ -149,12 +149,12 @@ impl ModifyOption {
 }
 
 #[bon::bon]
-impl ScgAgent {
+impl AnswerAgent {
     #[builder]
     pub fn builder(
         os: String,
         shell: &Shell,
-        profile: ShellComamndGenProfile,
+        profile: AnswerProfile,
         config: AppConfig,
     ) -> Result<Self> {
         Self::new(os, shell, profile, config)
@@ -174,7 +174,11 @@ fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
     }
 }
 
-fn is_potentially_invalid_command(s: &FinishResponseItem) -> bool {
+/// 仅对命令类回答做"疑似无效命令"判断; 文本类回答不参与校验.
+fn is_potentially_invalid_command(s: &AnswerItem) -> bool {
+    if !matches!(s.kind, crate::agent::tools::AnswerKind::Command) {
+        return false;
+    }
     let s = s.content.as_str();
     if let Some(ch) = s.chars().next() {
         !ch.is_ascii() && which::which(Path::new(s)).is_err()
@@ -183,9 +187,9 @@ fn is_potentially_invalid_command(s: &FinishResponseItem) -> bool {
     }
 }
 
-impl ScgAgent {
+impl AnswerAgent {
     #[tracing::instrument(
-        name = "ShellCommandGenAgent",
+        name = "AnswerAgent",
         level = "info",
         skip(profile, config, shell),
         fields(shell = shell.name())
@@ -193,7 +197,7 @@ impl ScgAgent {
     pub fn new(
         os: String,
         shell: &Shell,
-        profile: ShellComamndGenProfile,
+        profile: AnswerProfile,
         config: AppConfig,
     ) -> Result<Self> {
         // 添加 Content-Type: application/json 请求头.
@@ -221,7 +225,7 @@ impl ScgAgent {
                 .shell(shell.path().display())
                 .text_lang(&config.agent.language)
                 .maybe_max_tokens(config.llm.max_tokens)
-                .output_n(config.agent.shell_command_gen.output_n)
+                .output_n(config.agent.answer.output_n)
                 .finish(),
         );
         if let Some(max_tokens) = config.llm.max_tokens {
@@ -245,7 +249,7 @@ impl ScgAgent {
         if config.agent.use_tool_elevate {
             builder = builder.tool(Elevate);
         }
-        builder = builder.tool(FinishResponse);
+        builder = builder.tool(Answer);
 
         info!("Created.");
         Ok(Self {
@@ -257,7 +261,7 @@ impl ScgAgent {
 
     /// 调用 LLM, 实时显示输出.
     /// # Returns
-    /// (LLM 输出内容, [`FinishResponse`] 结果)
+    /// (LLM 输出内容, [`Answer`] 结果)
     async fn stream_chat_internal(
         &self,
         span_title: Option<&str>,
@@ -271,7 +275,7 @@ impl ScgAgent {
             .await;
 
         let mut output = None;
-        let mut finish: Option<FinishResponseArgs> = None;
+        let mut answers: Option<AnswerArgs> = None;
         let scroll = Arc::new(ScrolliingMessage::new(40));
         let finished = Arc::new(AtomicBool::new(false));
         let span_title = span_title.unwrap_or_default();
@@ -315,9 +319,9 @@ impl ScgAgent {
                             "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
-                        if tool_call.function.name == FinishResponse::NAME {
-                            // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            finish = Some(
+                        if tool_call.function.name == Answer::NAME {
+                            // todo 提供一个激进的选项, 当 Answer 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
+                            answers = Some(
                                 serde_json::from_value(tool_call.function.arguments).unwrap(),
                             );
                             break;
@@ -352,12 +356,7 @@ impl ScgAgent {
             }
         }
         finished.store(true, Ordering::Relaxed);
-        if !self
-            .config
-            .agent
-            .shell_command_gen
-            .wait_for_output_scrolling
-        {
+        if !self.config.agent.answer.wait_for_output_scrolling {
             scrolling_handle.abort();
         }
         scrolling_handle.await.ok();
@@ -371,17 +370,17 @@ impl ScgAgent {
         Ok(StreamChatStatus {
             output,
             usage,
-            commands: finish,
+            answers,
         })
     }
 
-    /// shell command gen agent 解决一个 `prompt`, 或修改命令.
+    /// answer agent 解决一个 `prompt`, 或修改命令.
     async fn resolve_internal(
         &self,
         prompt: String,
         modify_option: Option<ModifyOption>,
         attached: Option<String>,
-    ) -> Result<ScgAgentResponse> {
+    ) -> Result<AnswerAgentResponse> {
         // stream_prompt 会自动处理工具的调用.
         let attached_iter = attached
             .into_iter()
@@ -411,7 +410,7 @@ impl ScgAgent {
         history.push(Message::user(&prompt));
         history.push(Message::assistant(&status.output));
 
-        if let Some(FinishResponseArgs { results }) = &status.commands
+        if let Some(AnswerArgs { results }) = &status.answers
             && results.iter().any(is_potentially_invalid_command)
             && let Ok(check_valid_status) = self
                 .stream_chat()
@@ -431,11 +430,11 @@ impl ScgAgent {
                 .call()
                 .await
         {
-            status.commands = check_valid_status.commands;
+            status.answers = check_valid_status.answers;
             status.usage = usage_sum(status.usage, check_valid_status.usage);
         }
 
-        if status.commands.is_none()
+        if status.answers.is_none()
             && let Ok(check_finish_status) = self
                 .stream_chat()
                 .span_title("Finishing")
@@ -444,32 +443,32 @@ impl ScgAgent {
                 .call()
                 .await
         {
-            status.commands = check_finish_status.commands;
+            status.answers = check_finish_status.answers;
             status.usage = usage_sum(status.usage, check_finish_status.usage);
         }
 
         // todo 这里使用 ratatui 输出对话框.
-        if status.commands.is_none() {
-            warn!("No command provided.");
+        if status.answers.is_none() {
+            warn!("No answer provided.");
         }
-        let commands = status.commands.map(|x| x.results).unwrap_or_default();
-        info!("ShellCommandGenAgent: {}", status.output);
-        Ok(ScgAgentResponse {
+        let answers = status.answers.map(|x| x.results).unwrap_or_default();
+        info!("AnswerAgent: {}", status.output);
+        Ok(AnswerAgentResponse {
             messages: history,
-            commands,
+            answers,
         })
     }
 }
 
 #[bon::bon]
-impl ScgAgent {
+impl AnswerAgent {
     #[builder]
     pub async fn resolve(
         &self,
         prompt: String,
         modify_option: Option<ModifyOption>,
         attached: Option<String>,
-    ) -> Result<ScgAgentResponse> {
+    ) -> Result<AnswerAgentResponse> {
         self.resolve_internal(prompt, modify_option, attached).await
     }
 
@@ -488,7 +487,7 @@ impl ScgAgent {
 mod test {
     use unicode_width::UnicodeWidthStr;
 
-    use crate::agent::shell_command_gen::ScrolliingMessage;
+    use crate::agent::answer::ScrolliingMessage;
 
     #[tokio::test]
     async fn scroll_message() {

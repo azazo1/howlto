@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::{
-    agent::tools::FinishResponseItem,
+    agent::tools::{AnswerItem, AnswerKind},
     error::{Error, Result},
-    tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
+    tui::{command_helper::MINIMUM_TUI_WIDTH, markdown, terminal::InlineTerminal},
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -43,7 +43,7 @@ pub enum ActionKind {
 }
 
 struct AppWidget {
-    items: Vec<FinishResponseItem>,
+    items: Vec<AnswerItem>,
     list_state: ListState,
 }
 
@@ -70,7 +70,10 @@ impl AppWidget {
     fn calc_width(&self) -> u16 {
         self.items
             .iter()
-            .map(|x| x.desc.width_cjk().max(x.content.width_cjk()) + 5)
+            .map(|x| {
+                // 命令项: content + desc 对齐; 文本项: 以 content 行宽为准 (markdown 原文).
+                x.desc.width_cjk().max(x.content.width_cjk()) + 5
+            })
             .max()
             .unwrap_or(0)
             .max(TITLE.width_cjk() + 5)
@@ -139,6 +142,20 @@ impl Widget for &mut AppWidget {
                             Span::from("  ")
                         }
                         .fg(Color::LightCyan);
+                        // 文本项: 用 markdown 高亮渲染整段内容, desc 仅作浅色尾注.
+                        if matches!(x.kind, AnswerKind::Text) {
+                            let mut text = markdown::render(&x.content);
+                            // 第一行加上选择前缀.
+                            if let Some(first_line) = text.lines.first_mut() {
+                                first_line.spans.insert(0, prefix);
+                            }
+                            if !x.desc.is_empty() {
+                                text.extend(x.desc.lines().map(|line| {
+                                    Line::from(line).alignment(Alignment::Right).dark_gray()
+                                }));
+                            }
+                            return text;
+                        }
                         let content = x.content.as_str();
                         let desc = x.desc.as_str();
                         if self.should_line_break(width as usize - 2, 2, content, desc) {
@@ -246,10 +263,20 @@ impl App {
         })
     }
 
+    /// 产生动作. 对文本项, 只允许 `Copy` (复制文本); 其它动作 (执行/修改/写入输入缓冲) 返回 None.
     fn action_result(&self, kind: ActionKind) -> Option<Action> {
         if let Some(sel) = self.widget.list_state.selected() {
-            let command = self.widget.items.get(sel).map(|x| x.content.clone());
-            command.map(|command| Action { command, kind })
+            let item = self.widget.items.get(sel)?;
+            if matches!(item.kind, AnswerKind::Text)
+                && !matches!(kind, ActionKind::Copy)
+            {
+                return None;
+            }
+            let command = item.content.clone();
+            Some(Action {
+                command,
+                kind,
+            })
         } else {
             None
         }
@@ -281,7 +308,7 @@ impl App {
         Ok(rst?)
     }
 
-    fn new(items: Vec<FinishResponseItem>) -> io::Result<App> {
+    fn new(items: Vec<AnswerItem>) -> io::Result<App> {
         let mut list_state = ListState::default();
         list_state.select_first();
         let widget = AppWidget { items, list_state };
@@ -292,17 +319,26 @@ impl App {
                     .items
                     .iter()
                     .map(|x| {
-                        if widget.should_line_break(
+                        if matches!(x.kind, AnswerKind::Text) {
+                            // 文本项: 渲染后的行数 (markdown 可展开为多行).
+                            let content_lines = markdown::render(x.content.as_str()).height();
+                            let desc_lines = if x.desc.is_empty() {
+                                0
+                            } else {
+                                x.desc.lines().count()
+                            };
+                            content_lines + desc_lines
+                        } else if widget.should_line_break(
                             // -2: List widget 的高亮 symbol 宽度.
                             widget.calc_width() as usize - 2,
                             2,
                             x.content.as_str(),
                             x.desc.as_str(),
                         ) {
-                            // 分行.
+                            // 命令项分行.
                             x.content.lines().count() + x.desc.lines().count()
                         } else {
-                            // 不分行.
+                            // 命令项不分行.
                             1
                         }
                     })
@@ -312,7 +348,7 @@ impl App {
         Ok(App { terminal, widget })
     }
 
-    pub async fn select(items: Vec<FinishResponseItem>) -> Result<Option<Action>> {
+    pub async fn select(items: Vec<AnswerItem>) -> Result<Option<Action>> {
         if items.is_empty() {
             return Err(Error::InvalidInput("items can't be empty".into()));
         }

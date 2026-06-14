@@ -7,7 +7,7 @@ use tokio::io;
 use tracing::debug;
 
 use crate::agent::sandbox::{self, Sandbox};
-use crate::tui::dangerous_execution;
+use crate::tui::elevate;
 
 /// 把 stdout/stderr 按行分页格式化, 复用给 [`Explore`] 与 [`Elevate`].
 fn format_paged_output(stdout: &[u8], stderr: &[u8], start_line: usize, read_lines: usize) -> String {
@@ -447,30 +447,50 @@ impl Tool for TheFuck {
     }
 }
 
-/// 结束输出, 给定输出结果
-pub struct FinishResponse;
+/// 结束输出, 给定输出结果.
+///
+/// 一条回答可以是 shell 命令 ([`AnswerKind::Command`]), 也可以是
+/// 纯文本/markdown 文本 ([`AnswerKind::Text`]).
+pub struct Answer;
+
+/// 回答的种类.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AnswerKind {
+    /// shell 命令, 可被复制/执行/写入 shell 输入缓冲区.
+    #[default]
+    Command,
+    /// 纯文本/markdown 回答, 仅展示, 不执行.
+    /// 当无法用单一命令回答 (解释、多步骤说明、对比等) 时使用, 可包含 markdown.
+    Text,
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct FinishResponseItem {
+pub struct AnswerItem {
     pub content: String,
+    /// 命令项的简短描述; 文本项 (`kind = Text`) 不需要, 默认为空.
+    #[serde(default)]
     pub desc: String,
+    /// 回答的种类, 默认为 [`AnswerKind::Command`] (向后兼容).
+    #[serde(default)]
+    pub kind: AnswerKind,
 }
 
 /// 输出结果
 #[derive(serde::Deserialize)]
-pub struct FinishResponseArgs {
-    pub results: Vec<FinishResponseItem>,
+pub struct AnswerArgs {
+    pub results: Vec<AnswerItem>,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum NoError {}
 
-impl Tool for FinishResponse {
-    const NAME: &'static str = "finish_response";
+impl Tool for Answer {
+    const NAME: &'static str = "answer";
 
     type Error = NoError;
 
-    type Args = FinishResponseArgs;
+    type Args = AnswerArgs;
 
     type Output = String;
 
@@ -478,7 +498,9 @@ impl Tool for FinishResponse {
         ToolDefinition {
             name: self.name(),
             description: "The mandatory tool used to finalize the interaction and present the generated answer(s) to the user. \
-                Input should be a list of string segments forming the complete, final response.".into(),
+                Each answer item is EITHER a shell command OR a text/markdown explanation. \
+                Pick the right `kind` per item."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -486,21 +508,32 @@ impl Tool for FinishResponse {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "description": "One item of the response.",
+                            "description": "One item of the answer.",
                             "properties": {
                                 "content": {
                                     "type": "string",
-                                    "description": "The content of the response.",
+                                    "description": "The content of the answer. \
+                                        For kind=\"command\": a single syntactically valid shell command suitable for direct execution. \
+                                        For kind=\"text\": a markdown/plain-text explanation."
                                 },
                                 "desc": {
                                     "type": "string",
-                                    "description": "Simple description of the content. Few words would be enough. Describing the difference between other choices."
+                                    "description": "ONLY for kind=\"command\": a short description of the command (a few words, describing the difference from other choices). \
+                                        OMIT this field for kind=\"text\" items."
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "enum": ["command", "text"],
+                                    "description": "Kind of this answer. \
+                                        \"command\" (default): a shell command the user can copy/execute/pipe. \
+                                        Use \"text\" when a single command cannot answer the question (explanations, multi-step guides, comparisons, etc.) — \
+                                        such items are shown to the user as markdown and are NOT executed. \
+                                        Prefer \"command\" whenever a command is possible."
                                 }
                             },
-                            "required": ["content", "desc"]
+                            "required": ["content"]
                         },
-                        "description": "A list of string segments that collectively form the complete, \
-                            formatted final answer to the user's request."
+                        "description": "A list of answer items that collectively form the complete, final answer to the user's request."
                     }
                 },
                 "required": ["results"],
@@ -591,7 +624,7 @@ impl Tool for Elevate {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        dangerous_execution::confirm_execution(&args.program, &args.args)
+        elevate::confirm_elevate(&args.program, &args.args)
             .await
             .map_err(io::Error::other)?;
         let mut command = tokio::process::Command::new(args.program);
@@ -616,7 +649,7 @@ mod test {
     use rig::tool::Tool;
     use tracing::Level;
 
-    use crate::agent::tools::{Man, ManArgs};
+    use crate::agent::tools::{AnswerItem, AnswerKind, Man, ManArgs};
 
     #[tokio::test]
     async fn man() {
@@ -633,5 +666,31 @@ mod test {
         })
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn answer_item_kind_default_is_command() {
+        // 不带 kind 字段 -> 默认 Command (向后兼容).
+        let item: AnswerItem =
+            serde_json::from_str(r#"{"content":"ls","desc":"list"}"#).unwrap();
+        assert_eq!(item.kind, AnswerKind::Command);
+    }
+
+    #[test]
+    fn answer_item_text_does_not_require_desc() {
+        // 文本项不需要 desc, 缺省时默认为空字符串.
+        let item: AnswerItem =
+            serde_json::from_str(r##"{"content":"# heading","kind":"text"}"##).unwrap();
+        assert_eq!(item.kind, AnswerKind::Text);
+        assert!(item.desc.is_empty(), "desc should default to empty");
+    }
+
+    #[test]
+    fn answer_item_kind_command_parses() {
+        let item: AnswerItem = serde_json::from_str(
+            r#"{"content":"ls -la","desc":"list","kind":"command"}"#,
+        )
+        .unwrap();
+        assert_eq!(item.kind, AnswerKind::Command);
     }
 }

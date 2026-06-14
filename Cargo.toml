@@ -15,6 +15,7 @@ crossterm = {version = "^0.28", features = ["event-stream", "libc", "use-dev-tty
 hyper-tls = {version = "0.6.0", features = ["vendored"]}
 indicatif = {version = "^0.18", features = ["tokio"]}
 phf = {version = "0.13.1", features = ["macros"]}
+pulldown-cmark = {version = "0.13", default-features = false}
 ratatui = "^0.29.0"
 reqwest = {version = "0.12.25"}
 rig-core = "0.27.0"

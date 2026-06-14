@@ -3,7 +3,7 @@ use std::fmt::Display;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use crate::agent::tools::FinishResponse;
+use crate::agent::tools::Answer;
 
 use template::*;
 mod template {
@@ -13,18 +13,18 @@ mod template {
     pub(super) const MAX_TOKENS: &str = "{{max_tokens}}";
     pub(super) const OUTPUT_N: &str = "{{output_n}}";
     pub(super) const COMMAND: &str = "{{command}}";
-    pub(super) const COMMANDS: &str = "{{commands}}";
+    pub(super) const ANSWERS: &str = "{{answers}}";
     pub(super) const ATTACHED: &str = "{{attached}}";
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Profiles {
-    pub shell_command_gen: ShellComamndGenProfile,
+    pub answer: AnswerProfile,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ShellComamndGenProfile {
-    /// 提示词(system): 生成命令
+pub struct AnswerProfile {
+    /// 提示词(system): 生成回答
     generate: String,
     /// 提示词: 修改命令
     modify: String,
@@ -32,12 +32,12 @@ pub struct ShellComamndGenProfile {
     attached: String,
     /// 提示词: 提示无效命令.
     check_valid: String,
-    /// 提示词: 提醒 [`FinishResponse`] 工具的调用.
+    /// 提示词: 提醒 [`Answer`] 工具的调用.
     check_finish: String,
 }
 
 #[bon::bon]
-impl ShellComamndGenProfile {
+impl AnswerProfile {
     #[builder(finish_fn = finish)]
     pub fn generate(
         &self,
@@ -61,8 +61,8 @@ impl ShellComamndGenProfile {
     }
 
     #[builder(finish_fn = fmt)]
-    pub fn check_valid(&self, #[builder(start_fn)] commands: impl Display) -> String {
-        self.check_valid_internal(commands)
+    pub fn check_valid(&self, #[builder(start_fn)] answers: impl Display) -> String {
+        self.check_valid_internal(answers)
     }
 
     pub fn check_finish(&self) -> String {
@@ -70,7 +70,7 @@ impl ShellComamndGenProfile {
     }
 }
 
-impl ShellComamndGenProfile {
+impl AnswerProfile {
     fn generate_internal(
         &self,
         os: impl Display,
@@ -102,19 +102,20 @@ impl ShellComamndGenProfile {
         self.attached.replace(ATTACHED, &attached.to_string())
     }
 
-    fn check_valid_internal(&self, commands: impl Display) -> String {
-        self.check_valid.replace(COMMANDS, &commands.to_string())
+    fn check_valid_internal(&self, answers: impl Display) -> String {
+        self.check_valid.replace(ANSWERS, &answers.to_string())
     }
 }
 
-impl Default for ShellComamndGenProfile {
+impl Default for AnswerProfile {
     fn default() -> Self {
-        const FINISH_RESPONSE: &str = FinishResponse::NAME;
+        const ANSWER: &str = Answer::NAME;
         Self {
             generate: format!(
                 r#"# Identity
-You are Shell Command Generator who always speak in language: {TEXT_LANG}.
-Provide {SHELL} commands for {OS}. You may give a short description and reasoning before calling the final tool.
+You are an assistant that answers the user's question, always speaking in language: {TEXT_LANG}.
+The user runs {SHELL} on {OS}. Most questions expect shell commands, but you may also answer in plain text/markdown when a single command cannot satisfy the request.
+You may give a short description and reasoning before calling the final tool.
 Keep your output concise; try not to exceed the user's max_tokens `{MAX_TOKENS}` (where [none] represents no limitation).
 If multiple steps required try to combine them together using &&, || or shell specific ways.
 
@@ -152,19 +153,23 @@ DO NOT embed malicious or destructive intent.
 
 ## Finish
 
-If you think user prompts are already valid commands, then call {FINISH_RESPONSE} tool with the commands.
+Call the `{ANSWER}` tool to finalize the interaction and present your answer(s) to the user.
+Each item in `results` is EITHER a shell command (`kind = "command"`) OR a markdown/plain-text explanation (`kind = "text"`).
 
-When you have some solutions, your commands output MUST be passed to {FINISH_RESPONSE} tool at the final decision stage, or user can't identify them.
-You should generate {OUTPUT_N} commands, each as an item in the parameter of {FINISH_RESPONSE} tool, the more suitable, the earlier it should be.
-Ensure the commands are valid commands, without any markdown style!
+**Mutually exclusive — pick ONE mode per answer, never mix:**
+- **Command mode**: emit {OUTPUT_N} command items (`kind = "command"`). Use this when the question can be answered with shell commands. Command items MUST include a short `desc` (a few words, distinguishing it from other choices).
+- **Text mode**: emit EXACTLY ONE text item (`kind = "text"`). Use this when a single command cannot answer the question (explanations, multi-step guides, comparisons, caveats, etc.). The text item MUST OMIT `desc` (its content is self-explanatory), and is shown to the user directly as markdown — no selection UI appears, it is NOT executed.
+
+Prefer command mode whenever a command is possible.
+
+When in command mode, your commands output MUST be passed to `{ANSWER}` at the final decision stage, or user can't identify them. The more suitable, the earlier it should be.
+Ensure command items are valid commands, without any markdown style!
 DO NOT quote arguments using ``, '', "" or anything else.
-The arguments supplied to the {FINISH_RESPONSE} tool must consist only of syntactically valid shell commands, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within the command string.
+A command item must consist only of a single syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within a command item — use the `desc` field or switch to text mode instead.
 
-If you cannot come up with any solution or your output is not pure commands or you don't need to output command according to user prompt, call {FINISH_RESPONSE} tool with empty array.
-Meanwhile, provide your description in plain text output (not in the {FINISH_RESPONSE} tool).
-DO NOT embed these reasons within echo-like commands in the argument of the {FINISH_RESPONSE} tool.
+If you cannot come up with any command solution, switch to text mode (a single `kind = "text"` item) and explain why.
 
-DO NOT call {FINISH_RESPONSE} twice. Once you call it, you should stop outputing anything.
+DO NOT call `{ANSWER}` twice. Once you call it, you should stop outputting anything.
 
 ## Text Language
 
@@ -183,12 +188,12 @@ with my prompt below."#
 {ATTACHED}"#
             ),
             check_valid: format!(
-                r#"(SYSTEM) WARNING: Your command output {COMMANDS} may contains invalid commands, are you sure about the answer?"#
+                r#"(SYSTEM) WARNING: Your answer {ANSWERS} may contains invalid commands, are you sure about the answer?"#
             ),
             check_finish: format!(
-                r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool.
-If you genuinely have no command to offer (no valid solution), call {FINISH_RESPONSE} with an empty array and explain why in plain text.
-Otherwise, if the user only asked about a command and did NOT ask to fix it, just re-output the previous command via {FINISH_RESPONSE}.
+                r#"(SYSTEM) WARNING: You haven't call the {ANSWER} tool.
+If you genuinely have no answer to offer (no valid solution), call {ANSWER} with an empty array and explain why in a kind="text" item.
+Otherwise, if the user only asked about a command and did NOT ask to fix it, just re-output the previous command via {ANSWER}.
 This is the final decision, you cannot ask the user for more information."#
             ),
         }
