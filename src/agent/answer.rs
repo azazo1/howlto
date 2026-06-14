@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agent::tools::{
-    Answer, AnswerArgs, AnswerItem, Elevate, Explore, Man, TheFuck, Tldr,
+    Answer, AnswerArgs, AnswerBody, CommandItem, Elevate, Explore, Man, TheFuck, Tldr,
 };
 use crate::config::AppConfig;
 use crate::config::profile::AnswerProfile;
@@ -125,7 +125,7 @@ pub struct AnswerAgentResponse {
     /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
     /// agent 做出决策需要输出的回答 (命令或文本).
-    pub answers: Vec<AnswerItem>,
+    pub answer: AnswerBody,
 }
 
 #[derive(Debug)]
@@ -174,11 +174,9 @@ fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
     }
 }
 
-/// 仅对命令类回答做"疑似无效命令"判断; 文本类回答不参与校验.
-fn is_potentially_invalid_command(s: &AnswerItem) -> bool {
-    if !matches!(s.kind, crate::agent::tools::AnswerKind::Command) {
-        return false;
-    }
+/// 判断一条命令是否"疑似无效" (首字符非 ASCII 且不在 PATH 中).
+/// 仅对 [`AnswerBody::Commands`] 中的命令项调用; 文本回答不参与校验.
+fn is_potentially_invalid_command(s: &CommandItem) -> bool {
     let s = s.content.as_str();
     if let Some(ch) = s.chars().next() {
         !ch.is_ascii() && which::which(Path::new(s)).is_err()
@@ -321,9 +319,8 @@ impl AnswerAgent {
                         );
                         if tool_call.function.name == Answer::NAME {
                             // todo 提供一个激进的选项, 当 Answer 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            answers = Some(
-                                serde_json::from_value(tool_call.function.arguments).unwrap(),
-                            );
+                            answers =
+                                Some(serde_json::from_value(tool_call.function.arguments).unwrap());
                             break;
                         }
                     }
@@ -410,8 +407,11 @@ impl AnswerAgent {
         history.push(Message::user(&prompt));
         history.push(Message::assistant(&status.output));
 
-        if let Some(AnswerArgs { results }) = &status.answers
-            && results.iter().any(is_potentially_invalid_command)
+        // 仅当当前回答是命令模式时, 才做"疑似无效命令"校验, 让模型复核.
+        if let Some(AnswerArgs {
+            answer: AnswerBody::Commands { commands },
+        }) = &status.answers
+            && commands.iter().any(is_potentially_invalid_command)
             && let Ok(check_valid_status) = self
                 .stream_chat()
                 .span_title("Checking Valid")
@@ -419,7 +419,7 @@ impl AnswerAgent {
                 .prompt(
                     self.profile
                         .check_valid(
-                            results
+                            commands
                                 .iter()
                                 .map(|x| x.content.as_str())
                                 .collect::<Vec<_>>()
@@ -451,11 +451,17 @@ impl AnswerAgent {
         if status.answers.is_none() {
             warn!("No answer provided.");
         }
-        let answers = status.answers.map(|x| x.results).unwrap_or_default();
+        // 兜底: 模型未给出有效回答时, 给一个空的文本回答.
+        let answer = status
+            .answers
+            .map(|x| x.answer)
+            .unwrap_or(AnswerBody::Text {
+                content: String::new(),
+            });
         info!("AnswerAgent: {}", status.output);
         Ok(AnswerAgentResponse {
             messages: history,
-            answers,
+            answer,
         })
     }
 }

@@ -10,7 +10,12 @@ use crate::agent::sandbox::{self, Sandbox};
 use crate::tui::elevate;
 
 /// 把 stdout/stderr 按行分页格式化, 复用给 [`Explore`] 与 [`Elevate`].
-fn format_paged_output(stdout: &[u8], stderr: &[u8], start_line: usize, read_lines: usize) -> String {
+fn format_paged_output(
+    stdout: &[u8],
+    stderr: &[u8],
+    start_line: usize,
+    read_lines: usize,
+) -> String {
     let take_lines = |src: &[u8]| {
         String::from_utf8_lossy(src)
             .lines()
@@ -449,37 +454,41 @@ impl Tool for TheFuck {
 
 /// 结束输出, 给定输出结果.
 ///
-/// 一条回答可以是 shell 命令 ([`AnswerKind::Command`]), 也可以是
-/// 纯文本/markdown 文本 ([`AnswerKind::Text`]).
+/// 回答在数据结构层面就是**互斥**的两种模式之一:
+/// - [`AnswerBody::Commands`]: 一组 shell 命令, 进选择框, 可被复制/执行/写入 shell 输入缓冲区.
+/// - [`AnswerBody::Text`]: 单条纯文本/markdown 回答, 直接打印到终端, **不**经过选择框, **不**执行.
 pub struct Answer;
 
-/// 回答的种类.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AnswerKind {
-    /// shell 命令, 可被复制/执行/写入 shell 输入缓冲区.
-    #[default]
-    Command,
-    /// 纯文本/markdown 回答, 仅展示, 不执行.
-    /// 当无法用单一命令回答 (解释、多步骤说明、对比等) 时使用, 可包含 markdown.
-    Text,
+/// 回答的正文.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum AnswerBody {
+    /// 命令模式: 一组可复制/执行的 shell 命令, 进入选择框.
+    Commands {
+        /// 候选命令列表.
+        commands: Vec<CommandItem>,
+    },
+    /// 文本模式: 单条 markdown/纯文本解释, 直接展示, 不执行, 不进选择框.
+    /// 当无法用单一命令回答 (解释、多步骤说明、对比等) 时使用.
+    Text {
+        /// markdown/纯文本内容.
+        content: String,
+    },
 }
 
+/// 单条 shell 命令项 (仅用于 [`AnswerBody::Commands`]).
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct AnswerItem {
+pub struct CommandItem {
     pub content: String,
-    /// 命令项的简短描述; 文本项 (`kind = Text`) 不需要, 默认为空.
+    /// 命令项的简短描述 (几个词, 与其它候选区分).
     #[serde(default)]
     pub desc: String,
-    /// 回答的种类, 默认为 [`AnswerKind::Command`] (向后兼容).
-    #[serde(default)]
-    pub kind: AnswerKind,
 }
 
-/// 输出结果
+/// [`Answer`] 工具的参数: 一条互斥模式的回答.
 #[derive(serde::Deserialize)]
 pub struct AnswerArgs {
-    pub results: Vec<AnswerItem>,
+    pub answer: AnswerBody,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -497,46 +506,62 @@ impl Tool for Answer {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "The mandatory tool used to finalize the interaction and present the generated answer(s) to the user. \
-                Each answer item is EITHER a shell command OR a text/markdown explanation. \
-                Pick the right `kind` per item."
+            description: "The mandatory tool used to finalize the interaction and present the answer to the user. \
+                The `answer` field is an EXCLUSIVE CHOICE between two modes (set `mode` to pick one): \
+                `commands` (a list of shell commands) \
+                OR `text` (a single markdown/plain-text). \
+                Prefer `commands` whenever a command can answer the question."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "results": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "description": "One item of the answer.",
-                            "properties": {
-                                "content": {
-                                    "type": "string",
-                                    "description": "The content of the answer. \
-                                        For kind=\"command\": a single syntactically valid shell command suitable for direct execution. \
-                                        For kind=\"text\": a markdown/plain-text explanation."
+                    "answer": {
+                        "type": "object",
+                        "description": "The final answer.",
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "description": "Command mode: a list of candidate shell commands. These are shown in a selection UI and may be executed/copied.",
+                                "properties": {
+                                    "mode": { "type": "string", "const": "commands" },
+                                    "commands": {
+                                        "type": "array",
+                                        "description": "Candidate shell commands. Each must be a single syntactically valid shell command.",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "content": {
+                                                    "type": "string",
+                                                    "description": "A single syntactically valid shell command suitable for direct execution on the target shell/OS. \
+                                                        No markdown, no quoting the whole command with `` '' or \"\"."
+                                                },
+                                                "desc": {
+                                                    "type": "string",
+                                                    "description": "A short description (a few words) distinguishing this command from the other candidates. REQUIRED in command mode."
+                                                }
+                                            },
+                                            "required": ["content", "desc"]
+                                        }
+                                    }
                                 },
-                                "desc": {
-                                    "type": "string",
-                                    "description": "ONLY for kind=\"command\": a short description of the command (a few words, describing the difference from other choices). \
-                                        OMIT this field for kind=\"text\" items."
-                                },
-                                "kind": {
-                                    "type": "string",
-                                    "enum": ["command", "text"],
-                                    "description": "Kind of this answer. \
-                                        \"command\" (default): a shell command the user can copy/execute/pipe. \
-                                        Use \"text\" when a single command cannot answer the question (explanations, multi-step guides, comparisons, etc.) — \
-                                        such items are shown to the user as markdown and are NOT executed. \
-                                        Prefer \"command\" whenever a command is possible."
-                                }
+                                "required": ["mode", "commands"]
                             },
-                            "required": ["content"]
-                        },
-                        "description": "A list of answer items that collectively form the complete, final answer to the user's request."
+                            {
+                                "type": "object",
+                                "description": "Text mode: a single markdown text shown directly to the user.",
+                                "properties": {
+                                    "mode": { "type": "string", "const": "text" },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "markdown/plain-text."
+                                    }
+                                },
+                                "required": ["mode", "content"]
+                            }
+                        ]
                     }
                 },
-                "required": ["results"],
+                "required": ["answer"],
             }),
         }
     }
@@ -649,7 +674,7 @@ mod test {
     use rig::tool::Tool;
     use tracing::Level;
 
-    use crate::agent::tools::{AnswerItem, AnswerKind, Man, ManArgs};
+    use crate::agent::tools::{Man, ManArgs};
 
     #[tokio::test]
     async fn man() {
@@ -669,28 +694,40 @@ mod test {
     }
 
     #[test]
-    fn answer_item_kind_default_is_command() {
-        // 不带 kind 字段 -> 默认 Command (向后兼容).
-        let item: AnswerItem =
-            serde_json::from_str(r#"{"content":"ls","desc":"list"}"#).unwrap();
-        assert_eq!(item.kind, AnswerKind::Command);
-    }
-
-    #[test]
-    fn answer_item_text_does_not_require_desc() {
-        // 文本项不需要 desc, 缺省时默认为空字符串.
-        let item: AnswerItem =
-            serde_json::from_str(r##"{"content":"# heading","kind":"text"}"##).unwrap();
-        assert_eq!(item.kind, AnswerKind::Text);
-        assert!(item.desc.is_empty(), "desc should default to empty");
-    }
-
-    #[test]
-    fn answer_item_kind_command_parses() {
-        let item: AnswerItem = serde_json::from_str(
-            r#"{"content":"ls -la","desc":"list","kind":"command"}"#,
+    fn answer_args_parses_commands_mode() {
+        use crate::agent::tools::{AnswerArgs, AnswerBody};
+        let args: AnswerArgs = serde_json::from_str(
+            r#"{"answer":{"mode":"commands","commands":[
+                {"content":"ls -la","desc":"list"},
+                {"content":"ls","desc":"brief"}
+            ]}}"#,
         )
         .unwrap();
-        assert_eq!(item.kind, AnswerKind::Command);
+        let AnswerBody::Commands { commands } = args.answer else {
+            panic!("expected commands mode");
+        };
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].content, "ls -la");
+        assert_eq!(commands[0].desc, "list");
+    }
+
+    #[test]
+    fn answer_args_parses_text_mode() {
+        use crate::agent::tools::{AnswerArgs, AnswerBody};
+        let args: AnswerArgs =
+            serde_json::from_str(r##"{"answer":{"mode":"text","content":"# heading"}}"##).unwrap();
+        let AnswerBody::Text { content } = args.answer else {
+            panic!("expected text mode");
+        };
+        assert_eq!(content, "# heading");
+    }
+
+    #[test]
+    fn command_item_desc_defaults_to_empty() {
+        use crate::agent::tools::CommandItem;
+        // 缺省 desc 时默认为空字符串.
+        let item: CommandItem = serde_json::from_str(r#"{"content":"ls"}"#).unwrap();
+        assert_eq!(item.content, "ls");
+        assert!(item.desc.is_empty(), "desc should default to empty");
     }
 }

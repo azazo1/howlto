@@ -331,13 +331,19 @@ mod tests {
     #[ignore = "需要真实 TTY 交互 (手动确认), 用 `cargo test test_confirm_elevate -- --ignored --nocapture` 运行"]
     async fn test_confirm_elevate() {
         log_init();
-        confirm_elevate("approve".as_ref(), &["hello", "world"]).await.unwrap();
+        confirm_elevate("approve".as_ref(), &["hello", "world"])
+            .await
+            .unwrap();
         assert_eq!(
-            confirm_elevate("reject".as_ref(), &["hello", "worlds"]).await.unwrap_err(),
+            confirm_elevate("reject".as_ref(), &["hello", "worlds"])
+                .await
+                .unwrap_err(),
             "Rejected by user."
         );
         assert_eq!(
-            confirm_elevate("reject_with_reason".as_ref(), &["reason:", "noicant"]).await.unwrap_err(),
+            confirm_elevate("reject_with_reason".as_ref(), &["reason:", "noicant"])
+                .await
+                .unwrap_err(),
             "Rejected by user: noicant"
         );
     }

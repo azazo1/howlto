@@ -8,11 +8,11 @@
 //! 同时提供 [`to_plain_text`] 提取纯文本 (用于 plain/管道模式输出, 避免
 //! markdown 标记污染下游).
 
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 /// 标题颜色 (按层级), 索引 0 对应 H1.
 const HEADING_COLORS: [Color; 6] = [
@@ -231,6 +231,63 @@ pub fn to_plain_text(markdown: &str) -> String {
     out.trim_end().to_string()
 }
 
+/// 把 markdown 渲染成带 ANSI 颜色高亮的文本并打印到 stdout (逐行).
+/// 用于交互模式下直接展示纯文本/markdown 回答.
+pub fn print_ansi(markdown: &str) {
+    let text = render(markdown);
+    for line in &text.lines {
+        let rendered: String = line.spans.iter().map(span_to_ansi).collect();
+        println!("{rendered}");
+    }
+}
+
+/// 把 ratatui [`Color`](ratatui::style::Color) 映射到 ANSI 前景色 SGR 序列.
+fn color_to_ansi_fg(c: Color) -> String {
+    match c {
+        Color::Black => "30".into(),
+        Color::Red => "31".into(),
+        Color::Green => "32".into(),
+        Color::Yellow => "33".into(),
+        Color::Blue => "34".into(),
+        Color::Magenta => "35".into(),
+        Color::Cyan => "36".into(),
+        Color::Gray | Color::DarkGray => "90".into(),
+        Color::LightRed => "91".into(),
+        Color::LightGreen => "92".into(),
+        Color::LightYellow => "93".into(),
+        Color::LightBlue => "94".into(),
+        Color::LightMagenta => "95".into(),
+        Color::LightCyan => "96".into(),
+        Color::White => "97".into(),
+        _ => "0".into(), // Reset / 默认.
+    }
+}
+
+/// 把一个 span 渲染成带 ANSI 样式的字符串 (前景色 + 修饰符).
+fn span_to_ansi(span: &Span<'_>) -> String {
+    let style = span.style;
+    let mut codes: Vec<String> = Vec::new();
+    if let Some(fg) = style.fg {
+        codes.push(color_to_ansi_fg(fg));
+    }
+    let add = style.add_modifier;
+    if add.contains(Modifier::BOLD) {
+        codes.push("1".into());
+    }
+    if add.contains(Modifier::ITALIC) {
+        codes.push("3".into());
+    }
+    if add.contains(Modifier::CROSSED_OUT) {
+        codes.push("9".into());
+    }
+    let prefix = if codes.is_empty() {
+        String::new()
+    } else {
+        format!("\x1b[{}m", codes.join(";"))
+    };
+    format!("{prefix}{}\x1b[0m", span.content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,55 +350,7 @@ mod tests {
     // ---- 目视检查测试 ----
     // 不是断言, 而是把渲染后的 spans 用真实 ANSI 颜色打印出来, 供人眼检查.
     // 运行方式: `cargo test render_visual -- --nocapture`
-
-    /// 把 ratatui 的 [`Color`] 映射到 ANSI 前景色 SGR 序列.
-    fn color_to_ansi_fg(c: Color) -> String {
-        match c {
-            Color::Black => "30".into(),
-            Color::Red => "31".into(),
-            Color::Green => "32".into(),
-            Color::Yellow => "33".into(),
-            Color::Blue => "34".into(),
-            Color::Magenta => "35".into(),
-            Color::Cyan => "36".into(),
-            Color::Gray | Color::DarkGray => "90".into(),
-            Color::LightRed => "91".into(),
-            Color::LightGreen => "92".into(),
-            Color::LightYellow => "93".into(),
-            Color::LightBlue => "94".into(),
-            Color::LightMagenta => "95".into(),
-            Color::LightCyan => "96".into(),
-            Color::White => "97".into(),
-            _ => "0".into(), // Reset / 默认.
-        }
-    }
-
-    /// 把一个 span 渲染成带 ANSI 样式的字符串.
-    fn span_to_ansi(span: &Span<'_>) -> String {
-        let style = span.style;
-        let mut codes: Vec<String> = Vec::new();
-        // 前景色.
-        if let Some(fg) = style.fg {
-            codes.push(color_to_ansi_fg(fg));
-        }
-        // 修饰符.
-        let add = style.add_modifier;
-        if add.contains(Modifier::BOLD) {
-            codes.push("1".into());
-        }
-        if add.contains(Modifier::ITALIC) {
-            codes.push("3".into());
-        }
-        if add.contains(Modifier::CROSSED_OUT) {
-            codes.push("9".into());
-        }
-        let prefix = if codes.is_empty() {
-            String::new()
-        } else {
-            format!("\x1b[{}m", codes.join(";"))
-        };
-        format!("{prefix}{}\x1b[0m", span.content)
-    }
+    // (复用模块级的 `span_to_ansi`.)
 
     #[test]
     #[ignore = "目视检查测试, 用 `cargo test render_visual -- --nocapture --ignored` 运行"]

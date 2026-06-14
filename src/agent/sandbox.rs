@@ -80,10 +80,14 @@ fn wrap_impl(sb: &Sandbox, program: &Path, args: &[String]) -> io::Result<Comman
     let mut command = Command::new(&sb.bwrap);
     command
         // 以只读方式挂载根文件系统, 保证无写副作用.
-        .arg("--ro-bind").arg("/").arg("/")
+        .arg("--ro-bind")
+        .arg("/")
+        .arg("/")
         // 提供 /dev /proc, 保证程序能基本启动与读取自身信息.
-        .arg("--dev").arg("/dev")
-        .arg("--proc").arg("/proc")
+        .arg("--dev")
+        .arg("/dev")
+        .arg("--proc")
+        .arg("/proc")
         // 隔离一切命名空间, 其中包含 --unshare-net 实现禁网.
         .arg("--unshare-all")
         // 与父进程生命周期绑定, 防止僵尸进程.
@@ -138,7 +142,10 @@ mod tests {
         // 写文件应被拒.
         let tmp = format!("/tmp/howlto_sb_test_{}", std::process::id());
         let mut cmd = sb
-            .wrap(Path::new("/bin/sh"), &["-c".into(), format!("echo x > {tmp}")])
+            .wrap(
+                Path::new("/bin/sh"),
+                &["-c".into(), format!("echo x > {tmp}")],
+            )
             .unwrap();
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -149,7 +156,10 @@ mod tests {
             "write inside seatbelt sandbox should fail, status={:?}",
             out.status
         );
-        assert!(!Path::new(&tmp).exists(), "file should not have been created");
+        assert!(
+            !Path::new(&tmp).exists(),
+            "file should not have been created"
+        );
         // 读应正常.
         let mut cmd = sb
             .wrap(Path::new("/bin/echo"), &["hi-from-seatbelt".into()])
@@ -172,7 +182,10 @@ mod tests {
         assert_eq!(sb.name(), "bubblewrap");
         let tmp = format!("/tmp/howlto_bwrap_test_{}", std::process::id());
         let mut cmd = sb
-            .wrap(Path::new("/bin/sh"), &["-c".into(), format!("echo x > {tmp}")])
+            .wrap(
+                Path::new("/bin/sh"),
+                &["-c".into(), format!("echo x > {tmp}")],
+            )
             .unwrap();
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -183,7 +196,10 @@ mod tests {
             "write inside bubblewrap sandbox should fail, status={:?}",
             out.status
         );
-        assert!(!Path::new(&tmp).exists(), "file should not have been created");
+        assert!(
+            !Path::new(&tmp).exists(),
+            "file should not have been created"
+        );
         let mut cmd = sb
             .wrap(Path::new("/bin/echo"), &["hi-from-bwrap".into()])
             .unwrap();

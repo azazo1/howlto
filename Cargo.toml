@@ -6,7 +6,6 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = {version = "1.0.100", features = ["backtrace"]}
-axum = {version = "0.8.7", optional = true}
 bitflags = "2.10.0"
 bon = "3.8.1"
 clap = {version = "4.5.53", features = ["derive"]}
@@ -35,15 +34,6 @@ tui-textarea = "0.7.0"
 unicode-width = "^0.2.0"
 uuid = {version = "1.11", features = ["v4"]}
 which = "8.0.0"
-
-[[bin]]
-name = "mocker"
-path = "src/bin/mocker.rs"
-required-features = ["mocker"]
-
-[features]
-default = []
-mocker = ["dep:axum"]
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

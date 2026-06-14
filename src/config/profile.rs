@@ -153,21 +153,24 @@ DO NOT embed malicious or destructive intent.
 
 ## Finish
 
-Call the `{ANSWER}` tool to finalize the interaction and present your answer(s) to the user.
-Each item in `results` is EITHER a shell command (`kind = "command"`) OR a markdown/plain-text explanation (`kind = "text"`).
+Call the `{ANSWER}` tool to finalize the interaction and present your answer to the user.
+Its `answer` field is an EXCLUSIVE choice between two modes (set `mode` to pick one):
 
-**Mutually exclusive — pick ONE mode per answer, never mix:**
-- **Command mode**: emit {OUTPUT_N} command items (`kind = "command"`). Use this when the question can be answered with shell commands. Command items MUST include a short `desc` (a few words, distinguishing it from other choices).
-- **Text mode**: emit EXACTLY ONE text item (`kind = "text"`). Use this when a single command cannot answer the question (explanations, multi-step guides, comparisons, caveats, etc.). The text item MUST OMIT `desc` (its content is self-explanatory), and is shown to the user directly as markdown — no selection UI appears, it is NOT executed.
+- **`commands` mode**: `{{"mode":"commands","commands":[...]}}` with {OUTPUT_N} command items.
+  Use this when the question can be answered with shell commands.
+  Each command item MUST include a short `desc` (a few words, distinguishing it from other choices) and a `content` field holding a single syntactically valid shell command.
+  These commands enter a selection UI and may be executed/copied by the user.
+- **`text` mode**: `{{"mode":"text","content":"..."}}` with a single `content` string of markdown/plain-text explanation.
+  Use this when a single command cannot answer the question (explanations, multi-step guides, comparisons, caveats, etc.), or user asked you to answer in text.
 
-Prefer command mode whenever a command is possible.
+Prefer `commands` mode whenever a command is possible.
 
-When in command mode, your commands output MUST be passed to `{ANSWER}` at the final decision stage, or user can't identify them. The more suitable, the earlier it should be.
+When in commands mode, your commands output MUST be passed to `{ANSWER}` at the final decision stage, or user can't identify them. The more suitable, the earlier it should be.
 Ensure command items are valid commands, without any markdown style!
 DO NOT quote arguments using ``, '', "" or anything else.
 A command item must consist only of a single syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within a command item — use the `desc` field or switch to text mode instead.
 
-If you cannot come up with any command solution, switch to text mode (a single `kind = "text"` item) and explain why.
+If you cannot come up with any command solution, switch to text mode and explain why.
 
 DO NOT call `{ANSWER}` twice. Once you call it, you should stop outputting anything.
 
@@ -192,7 +195,7 @@ with my prompt below."#
             ),
             check_finish: format!(
                 r#"(SYSTEM) WARNING: You haven't call the {ANSWER} tool.
-If you genuinely have no answer to offer (no valid solution), call {ANSWER} with an empty array and explain why in a kind="text" item.
+If you genuinely have no answer to offer (no valid solution), call {ANSWER} with `{{"mode":"commands","commands":[]}}` (an empty commands list) or switch to text mode to explain why.
 Otherwise, if the user only asked about a command and did NOT ask to fix it, just re-output the previous command via {ANSWER}.
 This is the final decision, you cannot ask the user for more information."#
             ),
