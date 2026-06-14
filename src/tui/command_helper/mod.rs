@@ -244,8 +244,8 @@ mod test {
     };
 
     #[tokio::test]
-    #[ignore = "需要真实 TTY 交互 (手动选择), 用 `cargo test tui -- --ignored --nocapture` 运行"]
-    async fn tui() {
+    #[ignore = "需要真实 TTY 交互 (手动选择), 用 `cargo test select_app_print_to_input_buffer -- --ignored --nocapture` 运行"]
+    async fn select_app_print_to_input_buffer() {
         println!("Manually select 3 with Copy action:");
         let action = super::select::App::select(
             [
@@ -273,7 +273,7 @@ mod test {
         assert_eq!(
             action,
             Some(Action {
-                kind: ActionKind::PrintToInputBuffer,
+                kind: ActionKind::Copy,
                 command: "3".to_string()
             })
         );
