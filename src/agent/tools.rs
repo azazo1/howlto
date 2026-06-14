@@ -1,4 +1,4 @@
-use std::{io::ErrorKind, path::PathBuf, process::Stdio};
+use std::{io::ErrorKind, path::Path, path::PathBuf, process::Stdio};
 
 use rig::{completion::ToolDefinition, tool::Tool};
 use serde::Deserialize;
@@ -45,6 +45,64 @@ fn default_read_lines() -> usize {
     DEFAULT_READ_LINES
 }
 
+/// 一条命令的调用方式, 是 [`Explore`] / [`Elevate`] 共享的参数,
+/// 在 JSON 中表现为带 `mode` 标签的互斥枚举 (与 [`AnswerBody`] 同一套路).
+///
+/// - [`Invocation::Program`]: 把 `program` 作为可执行文件, `args` 作为独立的 argv 项直接运行.
+/// - [`Invocation::Shell`]: 把 `command` 作为一条 shell 命令字符串, 交给 `<shell> -c "<cmd>"` 执行,
+///   支持管道、重定向、shell 内建、通配符、环境变量展开以及 `&&`/`||`/`;` 命令串联.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum Invocation {
+    /// 直接执行某个可执行文件.
+    Program {
+        /// 要执行的程序, 可以使用 PATH 中的程序而不提供绝对路径.
+        program: PathBuf,
+        /// 命令参数. 比如 `git add --help` 中的 `add --help` 就是参数.
+        /// 可以为空, 此时等价于直接执行 `program`.
+        #[serde(default)]
+        args: Vec<String>,
+    },
+    /// 通过 `<shell> -c "<command>"` 执行一条 shell 命令.
+    Shell {
+        /// 单条 shell 命令字符串.
+        command: String,
+    },
+}
+
+impl Invocation {
+    /// 拼出展示给用户的命令文本.
+    /// - [`Invocation::Program`] 模式下还原为 `<program> <args...>`;
+    /// - [`Invocation::Shell`] 模式下还原为原始 `command`, 而非 `<shell> -c <cmd>` 包装.
+    fn display(&self) -> String {
+        match self {
+            Self::Program { program, args } => std::iter::once(program.display().to_string())
+                .chain(args.iter().cloned())
+                .collect::<Vec<_>>()
+                .join(" "),
+            Self::Shell { command } => command.clone(),
+        }
+    }
+
+    /// 根据调用方式构造 [`tokio::process::Command`].
+    ///
+    /// `shell_path` 仅在 [`Invocation::Shell`] 模式下使用, 作为 `<shell> -c` 的那个 shell.
+    fn into_command(self, shell_path: &Path) -> tokio::process::Command {
+        match self {
+            Self::Program { program, args } => {
+                let mut command = tokio::process::Command::new(program);
+                command.args(args);
+                command
+            }
+            Self::Shell { command } => {
+                let mut shell = tokio::process::Command::new(shell_path);
+                shell.arg("-c").arg(command);
+                shell
+            }
+        }
+    }
+}
+
 /// 在只读沙箱中执行外部程序, 用于**采集信息**(读取帮助、列出当前目录、查询版本、检查环境等),
 /// 而非仅查询帮助文档.
 ///
@@ -52,32 +110,28 @@ fn default_read_lines() -> usize {
 /// 通过系统沙箱 (macOS Seatbelt / Linux Bubblewrap) 保证无写副作用与无网络.
 pub struct Explore {
     sandbox: Option<Sandbox>,
-}
-
-impl Default for Explore {
-    fn default() -> Self {
-        Self::new()
-    }
+    /// 仅在 [`Invocation::Shell`] 模式下使用, 作为 `<shell> -c` 的那个 shell 路径.
+    shell_path: PathBuf,
 }
 
 impl Explore {
     /// 自动探测当前平台的沙箱后端; 若不可用则 [`Self::sandbox`] 为 [`None`],
     /// 调用工具时会返回错误, 由模型自行降级到 man/tldr/elevate.
-    pub fn new() -> Self {
+    ///
+    /// `shell_path` 仅在 [`Invocation::Shell`] 模式下使用.
+    pub fn new(shell_path: PathBuf) -> Self {
         Self {
             sandbox: sandbox::detect(),
+            shell_path,
         }
     }
 }
 
 #[derive(serde::Deserialize)]
 pub struct ExploreArgs {
-    /// 要执行的程序, 可以使用 PATH 中的程序而不提供绝对路径.
-    program: PathBuf,
-    /// 命令参数. 比如 `git add --help` 中的 `add --help` 就是参数.
-    /// 此参数可以为空, 此时等价于直接执行 `program`.
-    #[serde(default)]
-    args: Vec<String>,
+    /// 要执行的调用方式 (直接执行可执行文件 / shell 命令), 见 [`Invocation`].
+    #[serde(flatten)]
+    invocation: Invocation,
     /// 从指定行开始返回内容, 为 [`None`] 则默认为 [`DEFAULT_START_LINE`] 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
@@ -115,9 +169,19 @@ impl Tool for Explore {
             parameters: json!({
                 "type": "object",
                 "properties": {
+                    "mode": {
+                        "type": "string",
+                        "description": "How to run the command. Pick ONE: \
+                            `program` (run an executable directly with separate argv items) \
+                            OR `shell` (run a shell command string via `<shell> -c`). \
+                            Prefer `program`; use `shell` only when the command needs shell syntax \
+                            (pipes, redirection, globbing, env-var expansion, builtins, `&&`/`||`/`;`).",
+                        "enum": ["program", "shell"],
+                        "default": "program"
+                    },
                     "program": {
                         "type": "string",
-                        "description": "The program to run. May be a name in PATH, a relative path, or an absolute path."
+                        "description": "[mode=program] The program to run. May be a name in PATH, a relative path, or an absolute path."
                     },
                     "args": {
                         "type": "array",
@@ -127,7 +191,14 @@ impl Tool for Explore {
                                 e.g. [\"--help\"], [\"-h\"], [\"--version\"], [\"status\"], [\"log\", \"--oneline\"], \
                                 or subcommand paths like [\"add\", \"--help\"] for `git add --help`."
                         },
-                        "description": "Arguments to pass to the program. Empty by default."
+                        "description": "[mode=program] Arguments to pass to the program. Empty by default."
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "[mode=shell] A single shell command string. \
+                            The tool wraps it as `<shell> -c \"<command>\"`, so do NOT include the `<shell> -c` prefix yourself; \
+                            just write the raw command body, e.g. `ls -la | grep howlto` (NOT `sh -c \"ls -la | grep howlto\"`). \
+                            Enables pipes, redirection, globbing, env-var expansion, shell builtins, and `&&`/`||`/`;` chaining."
                     },
                     "start_line": {
                         "type": "number",
@@ -139,7 +210,7 @@ impl Tool for Explore {
                             Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.", DEFAULT_READ_LINES),
                     }
                 },
-                "required": ["program"],
+                "required": ["mode"],
             }),
         }
     }
@@ -152,7 +223,15 @@ impl Tool for Explore {
                  try man/tldr or elevate instead",
             ));
         };
-        let mut command = sandbox.wrap(&args.program, &args.args)?;
+        // 沙箱层接收的是真正的 (program, args): shell 模式下即 (shell, [-c, command]).
+        let (program, args_for_sandbox) = match args.invocation.clone() {
+            Invocation::Program { program, args } => (program, args),
+            Invocation::Shell { command } => (
+                self.shell_path.clone(),
+                vec!["-c".to_string(), command],
+            ),
+        };
+        let mut command = sandbox.wrap(&program, &args_for_sandbox)?;
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -579,15 +658,23 @@ impl Tool for Answer {
 /// 例如 `git clone`、`npm view <pkg>`(需联网)、`make`(需写构建产物) 等.
 ///
 /// 名称中的 "elevate" 表示: 相较沙箱只读的 [`Explore`], 这里相当于获得了用户的**提权授权**.
-pub struct Elevate;
+pub struct Elevate {
+    /// 仅在 [`Invocation::Shell`] 模式下使用, 作为 `<shell> -c` 的那个 shell 路径.
+    shell_path: PathBuf,
+}
+
+impl Elevate {
+    /// `shell_path` 仅在 [`Invocation::Shell`] 模式下使用.
+    pub fn new(shell_path: PathBuf) -> Self {
+        Self { shell_path }
+    }
+}
 
 #[derive(serde::Deserialize)]
 pub struct ElevateArgs {
-    /// 要执行的程序, 可以使用 PATH 中的程序而不提供绝对路径.
-    program: PathBuf,
-    /// 命令参数
-    #[serde(default)]
-    args: Vec<String>,
+    /// 要执行的调用方式 (直接执行可执行文件 / shell 命令), 见 [`Invocation`].
+    #[serde(flatten)]
+    invocation: Invocation,
     /// 指定行开始返回内容, 为 [`None`] 则默认为 [`DEFAULT_START_LINE`] 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
@@ -621,9 +708,19 @@ impl Tool for Elevate {
             parameters: json!({
                 "type": "object",
                 "properties": {
+                    "mode": {
+                        "type": "string",
+                        "description": "How to run the command. Pick ONE: \
+                            `program` (run an executable directly with separate argv items) \
+                            OR `shell` (run a shell command string via `<shell> -c`). \
+                            Prefer `program`; use `shell` only when the command needs shell syntax \
+                            (pipes, redirection, globbing, env-var expansion, builtins, `&&`/`||`/`;`).",
+                        "enum": ["program", "shell"],
+                        "default": "program"
+                    },
                     "program": {
                         "type": "string",
-                        "description": "The program to run. May be a name in PATH, a relative path, or an absolute path."
+                        "description": "[mode=program] The program to run. May be a name in PATH, a relative path, or an absolute path."
                     },
                     "args": {
                         "type": "array",
@@ -631,7 +728,14 @@ impl Tool for Elevate {
                             "type": "string",
                             "description": "One argument per item."
                         },
-                        "description": "Arguments to pass to the program. Empty by default."
+                        "description": "[mode=program] Arguments to pass to the program. Empty by default."
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "[mode=shell] A single shell command string. \
+                            The tool wraps it as `<shell> -c \"<command>\"`, so do NOT include the `<shell> -c` prefix yourself; \
+                            just write the raw command body, e.g. `git push && echo done` (NOT `sh -c \"git push && echo done\"`). \
+                            Enables pipes, redirection, globbing, env-var expansion, shell builtins, and `&&`/`||`/`;` chaining."
                     },
                     "start_line": {
                         "type": "number",
@@ -643,18 +747,20 @@ impl Tool for Elevate {
                             Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.", DEFAULT_READ_LINES),
                     }
                 },
-                "required": ["program"],
+                "required": ["mode"],
             }),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        elevate::confirm_elevate(&args.program, &args.args)
+        // 对话框展示给用户的是真实的命令文本 (而非 `<shell> -c <cmd>` 包装).
+        let display_command = args.invocation.display();
+        elevate::confirm_elevate(&display_command)
             .await
             .map_err(io::Error::other)?;
-        let mut command = tokio::process::Command::new(args.program);
+
+        let mut command = args.invocation.into_command(&self.shell_path);
         command
-            .args(args.args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -729,5 +835,30 @@ mod test {
         let item: CommandItem = serde_json::from_str(r#"{"content":"ls"}"#).unwrap();
         assert_eq!(item.content, "ls");
         assert!(item.desc.is_empty(), "desc should default to empty");
+    }
+
+    #[test]
+    fn invocation_parses_program_mode() {
+        use crate::agent::tools::{ExploreArgs, Invocation};
+        let args: ExploreArgs =
+            serde_json::from_str(r#"{"mode":"program","program":"git","args":["--version"]}"#)
+                .unwrap();
+        let Invocation::Program { program, args } = args.invocation else {
+            panic!("expected program mode");
+        };
+        assert_eq!(program, std::path::Path::new("git"));
+        assert_eq!(args, vec!["--version".to_string()]);
+    }
+
+    #[test]
+    fn invocation_parses_shell_mode() {
+        use crate::agent::tools::{ExploreArgs, Invocation};
+        // shell 模式: command 是原始命令字符串, 不含 `sh -c` 前缀.
+        let args: ExploreArgs =
+            serde_json::from_str(r#"{"mode":"shell","command":"ls -la | grep howlto"}"#).unwrap();
+        let Invocation::Shell { command } = args.invocation else {
+            panic!("expected shell mode");
+        };
+        assert_eq!(command, "ls -la | grep howlto");
     }
 }

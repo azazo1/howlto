@@ -236,7 +236,7 @@ impl AnswerAgent {
             builder = builder.tool(Man);
         }
         if config.agent.use_tool_explore {
-            builder = builder.tool(Explore::new());
+            builder = builder.tool(Explore::new(shell.path().to_path_buf()));
         }
         if config.agent.use_tool_tldr {
             builder = builder.tool(Tldr);
@@ -245,7 +245,7 @@ impl AnswerAgent {
             builder = builder.tool(TheFuck::new(shell.name().to_string()));
         }
         if config.agent.use_tool_elevate {
-            builder = builder.tool(Elevate);
+            builder = builder.tool(Elevate::new(shell.path().to_path_buf()));
         }
         builder = builder.tool(Answer);
 
@@ -458,7 +458,11 @@ impl AnswerAgent {
             .unwrap_or(AnswerBody::Text {
                 content: String::new(),
             });
-        info!("AnswerAgent: {}", status.output);
+        if matches!(answer, AnswerBody::Commands { .. }) {
+            info!("AnswerAgent: {}", status.output);
+        } else {
+            info!("AnswerAgent answered.\n");
+        }
         Ok(AnswerAgentResponse {
             messages: history,
             answer,

@@ -1,6 +1,5 @@
 use std::{
     io,
-    path::Path,
     time::{Duration, Instant},
 };
 
@@ -266,16 +265,11 @@ impl App {
 
 /// 使用 tui 向用户确认是否**提权执行**某个命令 (相对沙箱只读的 [`Explore`](crate::agent::tools::Explore) 而言).
 /// 如果用户同意, 返回 Ok(()), 如果用户拒绝, 返回 Err(String), 内含拒绝原因.
-pub(crate) async fn confirm_elevate(
-    program: &Path,
-    args: &[impl AsRef<str>],
-) -> Result<(), String> {
-    let command = std::iter::once(program.display().to_string())
-        .chain(args.iter().map(|x| x.as_ref().to_string()))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let app = App::new(command.clone()).map_err(|e| {
+///
+/// `display_command` 是展示给用户确认的命令字符串, 调用方负责按需拼接 (例如 shell 模式下
+/// 已将 `<shell> -c <cmd>` 还原为真实命令文本展示, 避免用户看到一层 shell 包装).
+pub(crate) async fn confirm_elevate(display_command: &str) -> Result<(), String> {
+    let app = App::new(display_command.to_string()).map_err(|e| {
         warn!(error = %e, "failed to initialize elevation confirmation tui");
         format!("Failed to initialize confirmation dialog: {e}")
     })?;
@@ -294,11 +288,11 @@ pub(crate) async fn confirm_elevate(
 
     match decision {
         AppDecision::Approve => {
-            info!(command = %command, "elevation approved by user");
+            info!(command = %display_command, "elevation approved by user");
             Ok(())
         }
         AppDecision::Reject(reason) => {
-            info!(command = %command, reason = %reason, "elevation rejected by user");
+            info!(command = %display_command, reason = %reason, "elevation rejected by user");
             Err(reason)
         }
     }
@@ -331,17 +325,13 @@ mod tests {
     #[ignore = "需要真实 TTY 交互 (手动确认), 用 `cargo test test_confirm_elevate -- --ignored --nocapture` 运行"]
     async fn test_confirm_elevate() {
         log_init();
-        confirm_elevate("approve".as_ref(), &["hello", "world"])
-            .await
-            .unwrap();
+        confirm_elevate("approve hello world").await.unwrap();
         assert_eq!(
-            confirm_elevate("reject".as_ref(), &["hello", "worlds"])
-                .await
-                .unwrap_err(),
+            confirm_elevate("reject hello worlds").await.unwrap_err(),
             "Rejected by user."
         );
         assert_eq!(
-            confirm_elevate("reject_with_reason".as_ref(), &["reason:", "noicant"])
+            confirm_elevate("reject_with_reason reason: noicant")
                 .await
                 .unwrap_err(),
             "Rejected by user: noicant"
