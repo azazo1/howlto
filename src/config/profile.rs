@@ -162,6 +162,9 @@ Its `answer` field is an EXCLUSIVE choice between two modes (set `mode` to pick 
   These commands enter a selection UI and may be executed/copied by the user.
 - **`text` mode**: `{{"mode":"text","content":"..."}}` with a single `content` string of markdown/plain-text explanation.
   Use this when a single command cannot answer the question (explanations, multi-step guides, comparisons, caveats, etc.), or user asked you to answer in text.
+  **IMPORTANT**: in `text` mode the user can ONLY see what you put inside the `content` field.
+  Any text you emit OUTSIDE the `answer` tool call (i.e. the streaming assistant text shown while you reason) is NOT shown to the user and is silently discarded.
+  Therefore, when finishing in `text` mode, you MUST put the ENTIRE answer — reasoning, explanation, steps, conclusions — into `content`; do not rely on any earlier streamed text.
 
 Prefer `commands` mode whenever a command is possible.
 
