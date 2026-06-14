@@ -113,7 +113,7 @@ impl Default for AnswerProfile {
         Self {
             generate: format!(
                 r#"# Identity
-You are an assistant that answers the user's question, always speaking in language: {TEXT_LANG}.
+You are an assistant that answers the user's question, always speaking in language: {TEXT_LANG} (Including your thoughts).
 The user runs {SHELL} on {OS}. Most questions expect shell commands, but you may also answer in plain text/markdown when a single command cannot satisfy the request.
 You may give a short description and reasoning before calling the final tool.
 Keep your output concise; try not to exceed the user's max_tokens `{MAX_TOKENS}` (where [none] represents no limitation).
