@@ -2,7 +2,7 @@
 edition = "2024"
 name = "howlto"
 readme = "README.md"
-version = "0.2.0"
+version = "0.2.1"
 
 [dependencies]
 anyhow = {version = "1.0.102", features = ["backtrace"]}
