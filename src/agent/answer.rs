@@ -145,6 +145,16 @@ struct StreamChatStatus {
     answers: Option<AnswerArgs>,
 }
 
+fn parse_answer_args(arguments: serde_json::Value) -> Option<AnswerArgs> {
+    match serde_json::from_value(arguments) {
+        Ok(args) => Some(args),
+        Err(e) => {
+            warn!(error = %e, "invalid answer tool arguments");
+            None
+        }
+    }
+}
+
 impl ModifyOption {
     pub fn new(history: Vec<Message>, command: String) -> Self {
         Self { history, command }
@@ -297,7 +307,7 @@ impl AnswerAgent {
                 while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
                     let msg = scroll.scroll(7).await;
                     if !msg.is_empty() {
-                        pb_span.pb_set_message(&msg.replace("\n", " "));
+                        pb_span.pb_set_message(&msg);
                     }
                     tokio::time::sleep(Duration::from_millis(30)).await;
                 }
@@ -323,11 +333,17 @@ impl AnswerAgent {
                         );
                         if streaming_tool_call_ids.remove(&internal_call_id) {
                             scroll.push("\n".to_string()).await;
+                        } else {
+                            scroll
+                                .push(format!(
+                                    "\nToolcall: {} - {}\n",
+                                    tool_call.function.name, tool_call.function.arguments
+                                ))
+                                .await;
                         }
                         if tool_call.function.name == Answer::NAME {
                             // todo 提供一个激进的选项, 当 Answer 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            answers =
-                                Some(serde_json::from_value(tool_call.function.arguments).unwrap());
+                            answers = parse_answer_args(tool_call.function.arguments);
                             break;
                         }
                     }
@@ -339,7 +355,7 @@ impl AnswerAgent {
                         streaming_tool_call_ids.insert(internal_call_id);
                         match content {
                             ToolCallDeltaContent::Name(name) => {
-                                scroll.push(format!("Toolcall: {name} - ")).await;
+                                scroll.push(format!("\nToolcall: {name} - ")).await;
                             }
                             ToolCallDeltaContent::Delta(delta) => {
                                 scroll.push(delta).await;
@@ -547,7 +563,7 @@ impl AnswerAgent {
 mod test {
     use unicode_width::UnicodeWidthStr;
 
-    use crate::agent::answer::ScrolliingMessage;
+    use crate::agent::answer::{ScrolliingMessage, parse_answer_args};
 
     #[tokio::test]
     async fn scroll_message() {
@@ -566,5 +582,33 @@ mod test {
         sm.push("我能正常滚动".into()).await;
         assert_eq!(sm.scroll(0).await, "你好世界ab");
         assert_eq!(sm.scroll(usize::MAX).await, "能正常滚动");
+    }
+
+    #[test]
+    fn answer_args_without_mode_is_rejected() {
+        let value = serde_json::json!({
+            "answer": {
+                "commands": [
+                    {
+                        "content": "ls",
+                        "desc": "list files"
+                    }
+                ]
+            }
+        });
+
+        assert!(parse_answer_args(value).is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_call_message_stays_on_separate_line() {
+        let sm = ScrolliingMessage::new(usize::MAX);
+        sm.push("before".into()).await;
+        sm.push("\nToolcall: explore - ".into()).await;
+        sm.push("{}".into()).await;
+        sm.push("\n".into()).await;
+        sm.push("after".into()).await;
+
+        assert_eq!(sm.message().await, "before\nToolcall: explore - {}\nafter");
     }
 }

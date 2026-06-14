@@ -154,7 +154,7 @@ DO NOT embed malicious or destructive intent.
 ## Finish
 
 Call the `{ANSWER}` tool to finalize the interaction and present your answer to the user.
-Its `answer` field is an EXCLUSIVE choice between two modes (set `mode` to pick one):
+Its `answer` field is an EXCLUSIVE choice between two modes. The `answer` object MUST include `mode`:
 
 - **`commands` mode**: `{{"mode":"commands","commands":[...]}}` with {OUTPUT_N} command items.
   Use this when the question can be answered with shell commands.
@@ -198,7 +198,7 @@ with my prompt below."#
             ),
             check_finish: format!(
                 r#"(SYSTEM) WARNING: You haven't call the {ANSWER} tool.
-If you genuinely have no answer to offer (no valid solution), call {ANSWER} with `{{"mode":"commands","commands":[]}}` (an empty commands list) or switch to text mode to explain why.
+If you genuinely have no answer to offer (no valid solution), call {ANSWER} with arguments shaped exactly like `{{"answer":{{"mode":"commands","commands":[]}}}}` or use `{{"answer":{{"mode":"text","content":"..."}}}}` to explain why.
 Otherwise, if the user only asked about a command and did NOT ask to fix it, just re-output the previous command via {ANSWER}.
 This is the final decision, you cannot ask the user for more information."#
             ),

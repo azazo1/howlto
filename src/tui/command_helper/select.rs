@@ -65,6 +65,37 @@ enum AppEvent {
 }
 
 impl AppWidget {
+    fn max_line_width(s: &str) -> usize {
+        s.lines().map(UnicodeWidthStr::width_cjk).max().unwrap_or(0)
+    }
+
+    fn line_count(s: &str) -> usize {
+        s.lines().count().max(1)
+    }
+
+    fn command_item_height(&self, item: &CommandItem) -> usize {
+        if self.should_line_break(
+            self.calc_width() as usize - 2,
+            2,
+            item.content.as_str(),
+            item.desc.as_str(),
+        ) {
+            Self::line_count(item.content.as_str()) + item.desc.lines().count()
+        } else {
+            1
+        }
+    }
+
+    fn calc_height(&self) -> u16 {
+        let height = 4usize.saturating_add(
+            self.items
+                .iter()
+                .map(|item| self.command_item_height(item))
+                .sum::<usize>(),
+        );
+        height.min(u16::MAX as usize) as u16
+    }
+
     #[inline]
     #[must_use]
     fn calc_width(&self) -> u16 {
@@ -72,7 +103,8 @@ impl AppWidget {
             .iter()
             .map(|x| {
                 // 命令项: content + desc 对齐; 文本项: 以 content 行宽为准 (markdown 原文).
-                x.desc.width_cjk().max(x.content.width_cjk()) + 5
+                Self::max_line_width(x.desc.as_str()).max(Self::max_line_width(x.content.as_str()))
+                    + 5
             })
             .max()
             .unwrap_or(0)
@@ -89,10 +121,41 @@ impl AppWidget {
     /// - `content`, `desc`: 命令-描述 对.
     fn should_line_break(&self, width: usize, gap: usize, content: &str, desc: &str) -> bool {
         // 只有两个都是单行的时候才能不分行.
-        if content.lines().count() + desc.lines().count() > 2 {
+        if Self::line_count(content) > 1 || desc.lines().count() > 1 {
             return true;
         }
         content.width_cjk() + desc.width_cjk() + gap > width
+    }
+
+    fn render_line_break_item(content: &str, desc: &str, selected: bool) -> Text<'static> {
+        let content_style = if selected {
+            Style::new().fg(Color::LightCyan)
+        } else {
+            Style::new()
+        };
+        let mut lines = content
+            .lines()
+            .enumerate()
+            .map(|(idx, line)| {
+                let prefix = if idx == 0 {
+                    if selected { "> " } else { "  " }
+                } else {
+                    "  "
+                };
+                Line::from_iter([
+                    Span::from(prefix).fg(Color::LightCyan),
+                    Span::styled(line.to_string(), content_style),
+                ])
+            })
+            .collect::<Vec<_>>();
+        if lines.is_empty() {
+            lines.push(Line::from(Span::from("  ").fg(Color::LightCyan)));
+        }
+        lines.extend(
+            desc.lines()
+                .map(|line| Line::from(line.to_string()).alignment(Alignment::Right).dark_gray()),
+        );
+        Text::from(lines)
     }
 }
 
@@ -145,15 +208,7 @@ impl Widget for &mut AppWidget {
                         let content = x.content.as_str();
                         let desc = x.desc.as_str();
                         if self.should_line_break(width as usize - 2, 2, content, desc) {
-                            let mut text = if selected {
-                                Text::from(prefix + content.into()).fg(Color::LightCyan)
-                            } else {
-                                Text::from(prefix + content.into())
-                            };
-                            text.extend(desc.lines().map(|line| {
-                                Line::from(line).alignment(Alignment::Right).dark_gray()
-                            }));
-                            text
+                            AppWidget::render_line_break_item(content, desc, selected)
                         } else {
                             let left = if selected {
                                 Span::from(content).fg(Color::LightCyan)
@@ -290,28 +345,7 @@ impl App {
         list_state.select_first();
         let widget = AppWidget { items, list_state };
         let terminal = InlineTerminal::init_with_options(ratatui::TerminalOptions {
-            // (border:2) + (hints:2)+ (items.len())
-            viewport: Viewport::Inline(
-                4 + widget
-                    .items
-                    .iter()
-                    .map(|x| {
-                        if widget.should_line_break(
-                            // -2: List widget 的高亮 symbol 宽度.
-                            widget.calc_width() as usize - 2,
-                            2,
-                            x.content.as_str(),
-                            x.desc.as_str(),
-                        ) {
-                            // 命令项分行.
-                            x.content.lines().count() + x.desc.lines().count()
-                        } else {
-                            // 命令项不分行.
-                            1
-                        }
-                    })
-                    .sum::<usize>() as u16,
-            ),
+            viewport: Viewport::Inline(widget.calc_height()),
         })?;
         Ok(App { terminal, widget })
     }
@@ -322,5 +356,56 @@ impl App {
         }
         let app = App::new(items.into_iter().collect())?;
         app.run().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{buffer::Buffer, layout::Rect};
+
+    use super::*;
+
+    fn buffer_line(buffer: &Buffer, y: u16) -> String {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect()
+    }
+
+    #[test]
+    fn render_multiline_command_keeps_content_lines() {
+        let mut list_state = ListState::default();
+        list_state.select_first();
+        let mut widget = AppWidget {
+            items: vec![CommandItem {
+                content: "for file in *.bak\n    mv $file fixed\nend".into(),
+                desc: "batch rename".into(),
+            }],
+            list_state,
+        };
+        let area = Rect::new(0, 0, 60, 8);
+        let mut buffer = Buffer::empty(area);
+
+        (&mut widget).render(area, &mut buffer);
+
+        let first_line = buffer_line(&buffer, 1);
+        assert!(first_line.contains("> for file in *.bak"));
+        assert!(!first_line.contains("mv $file"));
+        assert!(buffer_line(&buffer, 2).contains("    mv $file fixed"));
+        assert!(buffer_line(&buffer, 3).contains("end"));
+    }
+
+    #[test]
+    fn select_height_saturates_when_content_is_too_tall() {
+        let mut list_state = ListState::default();
+        list_state.select_first();
+        let widget = AppWidget {
+            items: vec![CommandItem {
+                content: "cmd\n".repeat(u16::MAX as usize),
+                desc: String::new(),
+            }],
+            list_state,
+        };
+
+        assert_eq!(widget.calc_height(), u16::MAX);
     }
 }
