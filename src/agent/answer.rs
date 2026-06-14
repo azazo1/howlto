@@ -42,8 +42,9 @@ struct ScrolliingMessage {
     /// 滚动的窗口宽度.
     scroll_width: usize,
     message: RwLock<String>,
-    /// 字节索引.
-    message_read_cursor: RwLock<usize>,
+    display_message: RwLock<String>,
+    /// Display byte index.
+    display_read_cursor: RwLock<usize>,
 }
 
 impl ScrolliingMessage {
@@ -51,7 +52,8 @@ impl ScrolliingMessage {
         Self {
             scroll_width,
             message: RwLock::new(String::new()),
-            message_read_cursor: RwLock::new(0),
+            display_message: RwLock::new(String::new()),
+            display_read_cursor: RwLock::new(0),
         }
     }
 
@@ -61,13 +63,16 @@ impl ScrolliingMessage {
     }
 
     async fn push(&self, appendant: String) {
+        let display_appendant = sanitize_scroll_message(&appendant);
         let mut message = self.message.write().await;
         *message += &appendant;
+        let mut display_message = self.display_message.write().await;
+        *display_message += &display_appendant;
     }
 
     async fn has_new_messages(&self) -> bool {
-        let message = self.message.read().await;
-        message.len() > *self.message_read_cursor.read().await
+        let display_message = self.display_message.read().await;
+        display_message.len() > *self.display_read_cursor.read().await
     }
 
     fn window_at_first(s: &str, width: usize) -> &str {
@@ -105,15 +110,39 @@ impl ScrolliingMessage {
 
     /// - `step`: 滚动 unicode_width 数.
     async fn scroll(&self, step: usize) -> String {
-        let cursor = *self.message_read_cursor.read().await;
-        let message = self.message.read().await;
-        let appendant = Self::window_at_first(&message[cursor..], step);
+        let cursor = *self.display_read_cursor.read().await;
+        let display_message = self.display_message.read().await;
+        let appendant = Self::window_at_first(&display_message[cursor..], step);
         #[cfg(test)]
         eprintln!("appendant: {{{appendant}}}");
-        let window = Self::window_at_last(&message[..cursor + appendant.len()], self.scroll_width);
-        *self.message_read_cursor.write().await += appendant.len();
+        let window =
+            Self::window_at_last(&display_message[..cursor + appendant.len()], self.scroll_width);
+        *self.display_read_cursor.write().await += appendant.len();
         window.to_string()
     }
+}
+
+fn sanitize_scroll_message(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if chars.next_if_eq(&'[').is_some() {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if ch.is_control() {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Answer Agent: 解答用户问题, 既可输出 shell 命令, 也可输出纯文本/markdown.
@@ -610,5 +639,22 @@ mod test {
         sm.push("after".into()).await;
 
         assert_eq!(sm.message().await, "before\nToolcall: explore - {}\nafter");
+    }
+
+    #[tokio::test]
+    async fn scroll_message_sanitizes_display_text() {
+        let sm = ScrolliingMessage::new(usize::MAX);
+        sm.push("before\n\t\x1b[31mred\x1b[0m\rafter".into()).await;
+
+        assert_eq!(sm.scroll(usize::MAX).await, "before  red after");
+    }
+
+    #[tokio::test]
+    async fn scroll_message_keeps_raw_message() {
+        let sm = ScrolliingMessage::new(usize::MAX);
+        let raw = "before\n\t\x1b[31mred\x1b[0m\rafter";
+        sm.push(raw.into()).await;
+
+        assert_eq!(sm.message().await, raw);
     }
 }
