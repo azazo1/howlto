@@ -29,6 +29,24 @@ howlto list file real sizes in howlto-windows-x86_64.zip
 bun --help | howlto update bun itself
 ```
 
+## 直接回答简单问题
+
+这类问题通常不需要把命令交给用户选择, 而是直接给出文本结果. 如果 agent 需要查看当前环境, 会先使用只读工具获取结果, 再把关键步骤和结论一起输出.
+
+```shell
+howlto explain why git says detached HEAD
+# 可能输出: detached HEAD 表示当前检出的是某个提交而不是分支. 如果只是查看代码可以忽略, 如果要继续开发可以新建分支.
+
+howlto is this repo dirty
+# 可能输出: 工作区是干净的. 关键步骤: git status --short
+
+howlto what is the current package version
+# 可能输出: 当前包版本是 0.2.1. 关键步骤: 读取 Cargo.toml 中的 package.version
+
+howlto why does cargo say package not found
+# 可能输出: 通常是包名写错, registry 没有同步, 或者当前 source 配置不对. 先确认包名和 registry source.
+```
+
 ## Shell 集成
 
 > [!NOTE]

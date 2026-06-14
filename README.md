@@ -62,6 +62,8 @@ howlto -pq list all files | head -n 1 | xargs $SHELL -c
 cargo --help | howlto cargo build with no default feature
 ```
 
+更多使用场景见: [示例](docs/examples.md).
+
 ### Shell 集成
 
 以 fish 为例子, 执行下面的命令:
