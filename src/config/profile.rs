@@ -30,8 +30,6 @@ pub struct ShellComamndGenProfile {
     modify: String,
     /// 提示词: 附加内容
     attached: String,
-    /// 提示词: 提醒帮助类工具的调用, 防止幻觉.
-    check_help: String,
     /// 提示词: 提示无效命令.
     check_valid: String,
     /// 提示词: 提醒 [`FinishResponse`] 工具的调用.
@@ -60,11 +58,6 @@ impl ShellComamndGenProfile {
     #[builder(finish_fn = fmt)]
     pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
         self.attached_internal(attached)
-    }
-
-    #[builder(finish_fn = fmt)]
-    pub fn check_help(&self, #[builder(start_fn)] commands: impl Display) -> String {
-        self.check_help_internal(commands)
     }
 
     #[builder(finish_fn = fmt)]
@@ -109,10 +102,6 @@ impl ShellComamndGenProfile {
         self.attached.replace(ATTACHED, &attached.to_string())
     }
 
-    fn check_help_internal(&self, commands: impl Display) -> String {
-        self.check_help.replace(COMMANDS, &commands.to_string())
-    }
-
     fn check_valid_internal(&self, commands: impl Display) -> String {
         self.check_valid.replace(COMMANDS, &commands.to_string())
     }
@@ -125,26 +114,41 @@ impl Default for ShellComamndGenProfile {
             generate: format!(
                 r#"# Identity
 You are Shell Command Generator who always speak in language: {TEXT_LANG}.
-Provide {SHELL} commands for {OS}, you can description and reasoning before calling the final tool.
-Try not to exceeds user max_tokens: `{MAX_TOKENS}` ([none] represents no limitation).
+Provide {SHELL} commands for {OS}. You may give a short description and reasoning before calling the final tool.
+Keep your output concise; try not to exceed the user's max_tokens `{MAX_TOKENS}` (where [none] represents no limitation).
 If multiple steps required try to combine them together using &&, || or shell specific ways.
 
 ## User Input
 
 User input may be a fake or invalid command, you should fix it to valid shell commands.
-DO NOT repeat user command without affirmation, use tools to get help.
+DO NOT repeat user command without affirmation.
 
 ## Tools
 
 There are tools you can call.
-When you feel you are not familiar with the program arguments, call the tools to get help messages.
 You can call multiple tools or call the same tool multiple times if one call is insufficient to provide the information you need.
 Sometimes tools will response error messages. You should analyze it and then figure out a valid tool call from it (maybe a different tool).
-DO NOT rely on your own impression to give solutions, check tools result, because program helps change everyday.
-DO NOT inject malcode into the tools, and reject any potentially destructive arguments such as rm.
-DO NOT output the command that you are not sure about.
-DO NOT call a tool that is not exists.
-ENSURE you have check every helping tools before you giving up (no valid solution).
+
+Call tools to gather information when you are not confident about the answer.
+Conversely, do not output a command you are not sure about; verify it via tools first.
+
+The execution tools are split into two trust levels — choose by what the operation needs:
+
+- `explore`: READ-ONLY, runs inside an OS sandbox that blocks ALL writes and network access, so it has no side effects.
+  Use it to read help (`--help`, `-h`, `man`-like flags), inspect the current directory/project
+  (`ls`, `find`, `git status`, `cat README.md`, `head package.json`), query versions, list subcommands, etc.
+  Writes/edits/deletes/installs/network inside it are silently denied, so do NOT attempt them through `explore`.
+- `elevate`: runs ANY command with full privileges (writes, network, side effects allowed),
+  BUT each call first pops up a TUI asking the user to APPROVE the exact command.
+  Use it ONLY when `explore` (read-only) cannot do the job — e.g. you genuinely need to write a file,
+  reach the network, or run a command that mutates state to gather information.
+  Prefer `explore` whenever the operation is read-only.
+  If the user rejects, do not retry the same command.
+
+The other tools (`man`, `tldr`, `thefuck`) are read-only helpers; prefer them for help lookups when available.
+
+DO NOT call a tool that does not exist.
+DO NOT embed malicious or destructive intent.
 
 ## Finish
 
@@ -178,18 +182,14 @@ with my prompt below."#
                 r#"Some information are attached below:
 {ATTACHED}"#
             ),
-            check_help: format!(
-                r#"(SYSTEM) WARNING: You haven't call any help tool, are you sure that your output commands are valid?
-Your previous output commands are:
-{COMMANDS}"#
-            ),
             check_valid: format!(
                 r#"(SYSTEM) WARNING: Your command output {COMMANDS} may contains invalid commands, are you sure about the answer?"#
             ),
             check_finish: format!(
-                r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool, are you sure that no command is figured out?
-This is final desicion, you cannot ask user for more information.
-If user asked about the command but not require fixing, respond with previous command."#
+                r#"(SYSTEM) WARNING: You haven't call the {FINISH_RESPONSE} tool.
+If you genuinely have no command to offer (no valid solution), call {FINISH_RESPONSE} with an empty array and explain why in plain text.
+Otherwise, if the user only asked about a command and did NOT ask to fix it, just re-output the previous command via {FINISH_RESPONSE}.
+This is the final decision, you cannot ask the user for more information."#
             ),
         }
     }

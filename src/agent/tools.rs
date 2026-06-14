@@ -6,83 +6,132 @@ use serde_json::json;
 use tokio::io;
 use tracing::debug;
 
+use crate::agent::sandbox::{self, Sandbox};
 use crate::tui::dangerous_execution;
 
+/// 把 stdout/stderr 按行分页格式化, 复用给 [`Explore`] 与 [`Elevate`].
+fn format_paged_output(stdout: &[u8], stderr: &[u8], start_line: usize, read_lines: usize) -> String {
+    let take_lines = |src: &[u8]| {
+        String::from_utf8_lossy(src)
+            .lines()
+            .skip(start_line)
+            .take(read_lines)
+            .collect::<String>()
+    };
+    let stdout_total = String::from_utf8_lossy(stdout).lines().count();
+    let stderr_total = String::from_utf8_lossy(stderr).lines().count();
+    format!(
+        "stdout(line: {0}-{1} of {stdout_total}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1} of {stderr_total}):\n{3}\n(lines after was omitted, change arguments to check)",
+        start_line,
+        read_lines + start_line - 1,
+        take_lines(stdout),
+        take_lines(stderr)
+    )
+}
+
+const DEFAULT_START_LINE: usize = 0;
+const DEFAULT_READ_LINES: usize = 500;
+
 fn default_start_line() -> usize {
-    0
+    DEFAULT_START_LINE
 }
 
 fn default_read_lines() -> usize {
-    50
+    DEFAULT_READ_LINES
 }
 
-/// 获取 --help 内容
-pub struct Help;
+/// 在只读沙箱中执行外部程序, 用于**采集信息**(读取帮助、列出当前目录、查询版本、检查环境等),
+/// 而非仅查询帮助文档.
+///
+/// 不强制追加任何参数, 由调用方提供任意参数,
+/// 通过系统沙箱 (macOS Seatbelt / Linux Bubblewrap) 保证无写副作用与无网络.
+pub struct Explore {
+    sandbox: Option<Sandbox>,
+}
+
+impl Default for Explore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Explore {
+    /// 自动探测当前平台的沙箱后端; 若不可用则 [`Self::sandbox`] 为 [`None`],
+    /// 调用工具时会返回错误, 由模型自行降级到 man/tldr/elevate.
+    pub fn new() -> Self {
+        Self {
+            sandbox: sandbox::detect(),
+        }
+    }
+}
 
 #[derive(serde::Deserialize)]
-pub struct HelpArgs {
-    /// 要执行 `--help` 的程序, 可以使用 PATH 中的程序而不提供绝对路径.
+pub struct ExploreArgs {
+    /// 要执行的程序, 可以使用 PATH 中的程序而不提供绝对路径.
     program: PathBuf,
-    /// 子命令, 比如 `git add --help` 中的 `add` 就是一个子命令, 可以添加多层的子命令,
-    /// 形成类似 `program a b c --help` 的效果.
-    /// 此参数可以为空.
+    /// 命令参数. 比如 `git add --help` 中的 `add --help` 就是参数.
+    /// 此参数可以为空, 此时等价于直接执行 `program`.
     #[serde(default)]
-    subcommands: Vec<String>,
-    /// `--help` 中从指定行开始返回内容, 为 [`None`] 则默认为 0 行.
+    args: Vec<String>,
+    /// 从指定行开始返回内容, 为 [`None`] 则默认为 [`DEFAULT_START_LINE`] 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// `--help` 中读取指定行数, 为 [`None`] 则默认为 50 行.
+    /// 读取指定行数, 为 [`None`] 则默认为 [`DEFAULT_READ_LINES`] 行.
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
 
-impl Tool for Help {
-    const NAME: &'static str = "help";
+impl Tool for Explore {
+    const NAME: &'static str = "explore";
 
     type Error = io::Error;
 
-    type Args = HelpArgs;
+    type Args = ExploreArgs;
 
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Get help of the program. \
-                As is equal to `program *subcommands --help` (simply adding --help after subcommands). \
-                If you find it cannot return the expected help messages, you can try dangerous help tools. \
+            description: "Sandboxed, READ-ONLY execution of an arbitrary program to GATHER INFORMATION \
+                (not limited to help text). \
+                The program runs inside an OS-level sandbox that blocks ALL file writes and network access, \
+                so it is safe and has no side effects. \
+                Use it to: read CLI help (`--help`, `-h`, `help <sub>`), inspect the current directory \
+                (e.g. `ls`, `find`, `git status`, `cat README.md`, `head package.json`), \
+                query versions (`--version`), list available subcommands/plugins, \
+                or run any other command whose purpose is to RETURN INFORMATION rather than to CHANGE state. \
+                Writes/edits/deletes/installs/network are denied by the sandbox, so attempting them just wastes a call. \
                 Don't read too many lines at a time. \
-                Call this multiple times to scan for the messages you need."
+                Call this multiple times to scan for the messages you need. \
+                If the sandbox backend is unavailable, this tool returns an error; \
+                fall back to man/tldr or, as a last resort, elevate (which asks the user to confirm)."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "subcommands": {
+                    "program": {
+                        "type": "string",
+                        "description": "The program to run. May be a name in PATH, a relative path, or an absolute path."
+                    },
+                    "args": {
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "description": "subcommand in a level"
+                            "description": "One argument per item. Pass read-only / informational arguments, \
+                                e.g. [\"--help\"], [\"-h\"], [\"--version\"], [\"status\"], [\"log\", \"--oneline\"], \
+                                or subcommand paths like [\"add\", \"--help\"] for `git add --help`."
                         },
-                        "description": r#"Subcommands of the program, \
-                            e.g.: you should give `["a", "b", "c"]` to get the help of `program a b c`. \
-                            if no subcommand is needed, to get help of the program itself, just skip this parameter. \
-                            Your query should start with [] or not given, getting the help of program itself, and then call again for the specific subcommands. \
-                            When you feel you are on the wrong subcommand, you can pop a level and check other subcommands."#
-                    },
-                    "program": {
-                        "type": "string",
-                        "description": "The program path you want to get help, \
-                            program in the PATH, \
-                            relative path and absolute path are available."
+                        "description": "Arguments to pass to the program. Empty by default."
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": format!("Skip `start_line` lines, if you want to scan through the content, increase this value, default is {}.", DEFAULT_START_LINE),
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                        "description": format!("Read `read_lines` lines, preventing from reading too much, default is {}, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.", DEFAULT_READ_LINES),
                     }
                 },
                 "required": ["program"],
@@ -91,31 +140,25 @@ impl Tool for Help {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let mut command = tokio::process::Command::new(args.program);
+        let Some(ref sandbox) = self.sandbox else {
+            return Err(io::Error::new(
+                ErrorKind::NotFound,
+                "no sandbox backend available on this platform; \
+                 try man/tldr or elevate instead",
+            ));
+        };
+        let mut command = sandbox.wrap(&args.program, &args.args)?;
         command
-            .args(args.subcommands)
-            .arg("--help")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        debug!(target: "tool-help", "Calling command {:?}...", command);
+        debug!(target: "tool-explore", sandbox = sandbox.name(), "Calling command {:?}...", command);
         let output = command.output().await?;
-        let start_line = args.start_line;
-        let read_lines = args.read_lines;
-        Ok(format!(
-            "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
-            start_line,
-            read_lines + start_line - 1,
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .skip(start_line)
-                .take(read_lines)
-                .collect::<String>(),
-            String::from_utf8_lossy(&output.stderr)
-                .lines()
-                .skip(start_line)
-                .take(read_lines)
-                .collect::<String>()
+        Ok(format_paged_output(
+            &output.stdout,
+            &output.stderr,
+            args.start_line,
+            args.read_lines,
         ))
     }
 }
@@ -136,10 +179,10 @@ pub struct ManArgs {
     section: Option<usize>,
     /// 要查询的 entry 名.
     entry: String,
-    /// same as: [`HelpArgs::start_line`]
+    /// same as: [`ExploreArgs::start_line`]
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// same as: [`HelpArgs::read_lines`]
+    /// same as: [`ExploreArgs::read_lines`]
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
@@ -183,12 +226,12 @@ impl Tool for Man {
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": format!("Skip `start_line` lines, if you want to scan through the content, increase this value, default is {}.", DEFAULT_START_LINE),
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                        "description": format!("Read `read_lines` lines, preventing from reading too much, default is {}, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.", DEFAULT_READ_LINES),
                     },
                 },
                 "required": ["entry"],
@@ -471,70 +514,75 @@ impl Tool for FinishResponse {
     }
 }
 
-/// 获取 CLI 帮助内容, 不过不能保证执行的命令一定是安全的.
-pub struct DangerousHelp;
+/// 执行**任意**程序, 不做沙箱限制, 但每次执行前都会弹出 TUI 让用户**确认**.
+///
+/// 适用于 [`Explore`] (沙箱只读) 无法完成的场景:
+/// 命令本身需要写文件、联网、或者会改变系统状态,
+/// 例如 `git clone`、`npm view <pkg>`(需联网)、`make`(需写构建产物) 等.
+///
+/// 名称中的 "elevate" 表示: 相较沙箱只读的 [`Explore`], 这里相当于获得了用户的**提权授权**.
+pub struct Elevate;
 
 #[derive(serde::Deserialize)]
-pub struct DangerousHelpArgs {
-    /// 要执行 `--help` 的程序, 可以使用 PATH 中的程序而不提供绝对路径.
+pub struct ElevateArgs {
+    /// 要执行的程序, 可以使用 PATH 中的程序而不提供绝对路径.
     program: PathBuf,
     /// 命令参数
     #[serde(default)]
     args: Vec<String>,
-    /// 指定行开始返回内容, 为 [`None`] 则默认为 0 行.
+    /// 指定行开始返回内容, 为 [`None`] 则默认为 [`DEFAULT_START_LINE`] 行.
     #[serde(default = "default_start_line")]
     start_line: usize,
-    /// 读取指定行数, 为 [`None`] 则默认为 50 行.
+    /// 读取指定行数, 为 [`None`] 则默认为 [`DEFAULT_READ_LINES`] 行.
     #[serde(default = "default_read_lines")]
     read_lines: usize,
 }
 
-impl Tool for DangerousHelp {
-    const NAME: &'static str = "dangerous_help";
+impl Tool for Elevate {
+    const NAME: &'static str = "elevate";
 
     type Error = io::Error;
 
-    type Args = DangerousHelpArgs;
+    type Args = ElevateArgs;
 
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: self.name(),
-            description: "Strictly for RETRIEVING and READING CLI help documentation or manuals. \
-                DO NOT execute functional commands (e.g., do not convert files, delete data, or run tasks). \
-                Your goal is to find flags like '--help', '-h', 'help <subcommand>', or 'man'. \
-                If you need to know how to use cli, call this with '--help', '--help=topic' or any help concerning flags, \
-                NEVER call it with operational arguments. \
-                Don't read too many lines at a time, \
-                call this multiple times to scan for the messages you need."
+            description: "Execute ANY program with full privileges (writes, network, side effects all allowed), \
+                BUT each call first pops up a TUI asking the user to APPROVE the exact command. \
+                Use it ONLY when explore (sandboxed read-only) cannot do the job, \
+                e.g. you genuinely need to write a file, reach the network, or run a command that mutates state \
+                in order to gather the information you need. \
+                Prefer explore whenever the operation is read-only. \
+                If the user rejects the command, the tool returns their rejection reason; \
+                do not retry the same command, try a different approach or give up gracefully. \
+                Don't read too many lines at a time, call this multiple times to scan for the messages you need."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
+                    "program": {
+                        "type": "string",
+                        "description": "The program to run. May be a name in PATH, a relative path, or an absolute path."
+                    },
                     "args": {
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "description": "One argument"
+                            "description": "One argument per item."
                         },
-                        "description": r#"ONLY help-related flags. Examples: ['--help'], ['-h'], ['help'], ['--usage']. \
-                            Forbidden: any flags that perform actual file processing or system changes."#
-                    },
-                    "program": {
-                        "type": "string",
-                        "description": "The program path you want to get help, \
-                            program in the PATH, \
-                            relative path and absolute path are available."
+                        "description": "Arguments to pass to the program. Empty by default."
                     },
                     "start_line": {
                         "type": "number",
-                        "description": "Skip `start_line` lines, if you want to scan through the content, increase this value, default is 0.",
+                        "description": format!("Skip `start_line` lines, if you want to scan through the content, increase this value, default is {}.", DEFAULT_START_LINE),
                     },
                     "read_lines": {
                         "type": "number",
-                        "description": "Read `read_lines` lines, preventing from reading too much, default is 50, which is a reasonable value. \
-                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.",
+                        "description": format!("Read `read_lines` lines, preventing from reading too much, default is {}, which is a reasonable value. \
+                            Calling with `read_lines` unchanged will not automatically scan through the content, see `start_line` instead.", DEFAULT_READ_LINES),
                     }
                 },
                 "required": ["program"],
@@ -552,24 +600,13 @@ impl Tool for DangerousHelp {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        debug!(target: "tool-help", "Calling command {:?}...", command);
+        debug!(target: "tool-elevate", "Calling command {:?}...", command);
         let output = command.output().await?;
-        let start_line = args.start_line;
-        let read_lines = args.read_lines;
-        Ok(format!(
-            "stdout(line: {0}-{1}):\n{2}\n(lines after was omitted, change arguments to check)\nstderr(line: {0}-{1}):\n{3}\n(lines after was omitted, change arguments to check)",
-            start_line,
-            read_lines + start_line - 1,
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .skip(start_line)
-                .take(read_lines)
-                .collect::<String>(),
-            String::from_utf8_lossy(&output.stderr)
-                .lines()
-                .skip(start_line)
-                .take(read_lines)
-                .collect::<String>()
+        Ok(format_paged_output(
+            &output.stdout,
+            &output.stderr,
+            args.start_line,
+            args.read_lines,
         ))
     }
 }

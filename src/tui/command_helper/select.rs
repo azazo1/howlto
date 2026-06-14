@@ -230,11 +230,10 @@ impl App {
                             KeyCode::Char('e') if kevt.modifiers.is_empty() => {
                                 send!(AppEvent::E);
                             }
-                            KeyCode::Enter if kevt.modifiers.is_empty() => {
-                                if start_time.elapsed() > skip_enter_duration {
+                            KeyCode::Enter if kevt.modifiers.is_empty()
+                                && start_time.elapsed() > skip_enter_duration => {
                                     send!(AppEvent::Enter);
                                 }
-                            }
                             _ => (),
                         }
                     }

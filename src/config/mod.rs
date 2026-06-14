@@ -48,19 +48,19 @@ pub struct AgentConfig {
     pub use_tool_man: bool,
     /// 是否使用 --help 帮助工具辅助 agent 生成内容,
     /// 是否能够执行成功取决与程序是否接受 `--help`参数.
-    #[serde(default = "default_use_tool_help")]
-    pub use_tool_help: bool,
+    #[serde(default = "default_use_tool_explore")]
+    pub use_tool_explore: bool,
     /// 是否使用 tldr 获取帮助信息工具.
     #[serde(default = "default_use_tool_tldr")]
     pub use_tool_tldr: bool,
     /// 是否使用 thefuck 修复命令工具.
     #[serde(default = "default_use_tool_thefuck")]
     pub use_tool_thefuck: bool,
-    /// 是否启用 dangerous_help 工具,
-    /// 用于获取 help 工具无法获取的帮助信息,
-    /// 每次执行都会向用户询问.
-    #[serde(default = "default_use_tool_dangerous_help")]
-    pub use_tool_dangerous_help: bool,
+    /// 是否启用 elevate 工具,
+    /// 用于执行 explore (沙箱只读) 无法完成的命令 (需要写/联网/改变状态),
+    /// 每次执行都会向用户询问确认.
+    #[serde(default = "default_use_tool_elevate")]
+    pub use_tool_elevate: bool,
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
@@ -125,7 +125,7 @@ fn default_use_tool_man() -> bool {
     true
 }
 
-fn default_use_tool_help() -> bool {
+fn default_use_tool_explore() -> bool {
     true
 }
 
@@ -141,7 +141,7 @@ fn default_use_tool_tldr() -> bool {
     true
 }
 
-fn default_use_tool_dangerous_help() -> bool {
+fn default_use_tool_elevate() -> bool {
     true
 }
 

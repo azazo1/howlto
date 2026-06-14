@@ -5,13 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::agent::tools::{
-    DangerousHelp, FinishResponse, FinishResponseArgs, FinishResponseItem, Help, Man, TheFuck, Tldr,
+    Elevate, Explore, FinishResponse, FinishResponseArgs, FinishResponseItem, Man, TheFuck, Tldr,
 };
 use crate::config::AppConfig;
 use crate::config::profile::ShellComamndGenProfile;
 use crate::error::{Error, Result};
 use crate::shell::Shell;
-use bitflags::bitflags;
 use reqwest::header::HeaderMap;
 use rig::agent::{Agent as RigAgent, MultiTurnStreamItem};
 use rig::client::CompletionClient;
@@ -137,20 +136,7 @@ pub struct ModifyOption {
     command: String,
 }
 
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct ToolCallState: u8 {
-        const TLDR           = 0b00001;
-        const HELP           = 0b00010;
-        const MAN            = 0b00100;
-        const THEFUCK        = 0b01000;
-        const DANGEROUS_HELP = 0b10000;
-    }
-}
-
-#[allow(dead_code)]
 struct StreamChatStatus {
-    tool_call_state: ToolCallState,
     output: String,
     usage: Option<Usage>,
     commands: Option<FinishResponseArgs>,
@@ -247,8 +233,8 @@ impl ScgAgent {
         if config.agent.use_tool_man {
             builder = builder.tool(Man);
         }
-        if config.agent.use_tool_help {
-            builder = builder.tool(Help);
+        if config.agent.use_tool_explore {
+            builder = builder.tool(Explore::new());
         }
         if config.agent.use_tool_tldr {
             builder = builder.tool(Tldr);
@@ -256,8 +242,8 @@ impl ScgAgent {
         if config.agent.use_tool_thefuck {
             builder = builder.tool(TheFuck::new(shell.name().to_string()));
         }
-        if config.agent.use_tool_dangerous_help {
-            builder = builder.tool(DangerousHelp);
+        if config.agent.use_tool_elevate {
+            builder = builder.tool(Elevate);
         }
         builder = builder.tool(FinishResponse);
 
@@ -315,7 +301,6 @@ impl ScgAgent {
             })
         };
 
-        let mut tool_call_state = ToolCallState::empty();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
             use MultiTurnStreamItem::*;
@@ -330,30 +315,12 @@ impl ScgAgent {
                             "Toolcall: {} - {}",
                             tool_call.function.name, tool_call.function.arguments
                         );
-                        match tool_call.function.name.as_str() {
-                            FinishResponse::NAME => {
-                                // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                                finish = Some(
-                                    serde_json::from_value(tool_call.function.arguments).unwrap(),
-                                );
-                                break;
-                            }
-                            Man::NAME => {
-                                tool_call_state |= ToolCallState::MAN;
-                            }
-                            Help::NAME => {
-                                tool_call_state |= ToolCallState::HELP;
-                            }
-                            Tldr::NAME => {
-                                tool_call_state |= ToolCallState::TLDR;
-                            }
-                            TheFuck::NAME => {
-                                tool_call_state |= ToolCallState::THEFUCK;
-                            }
-                            DangerousHelp::NAME => {
-                                tool_call_state |= ToolCallState::DANGEROUS_HELP;
-                            }
-                            _ => (),
+                        if tool_call.function.name == FinishResponse::NAME {
+                            // todo 提供一个激进的选项, 当 FinishResponse 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
+                            finish = Some(
+                                serde_json::from_value(tool_call.function.arguments).unwrap(),
+                            );
+                            break;
                         }
                     }
                     Reasoning(reasoning) => {
@@ -402,7 +369,6 @@ impl ScgAgent {
             (scroll.message().await, None)
         };
         Ok(StreamChatStatus {
-            tool_call_state,
             output,
             usage,
             commands: finish,
@@ -444,35 +410,6 @@ impl ScgAgent {
 
         history.push(Message::user(&prompt));
         history.push(Message::assistant(&status.output));
-
-        if status.tool_call_state.is_empty()
-            && let Ok(check_help_status) = self
-                .stream_chat()
-                .span_title("Checking Help")
-                .prompt(
-                    self.profile
-                        .check_help(if let Some(commands) = &status.commands {
-                            commands
-                                .results
-                                .iter()
-                                .map(|x| x.content.as_str())
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        } else {
-                            String::new()
-                        })
-                        .fmt(),
-                )
-                .history(history.clone())
-                .call()
-                .await
-        {
-            status.output.push_str("\n--- Checking Help ---\n");
-            status.output += &check_help_status.output;
-            history.push(Message::assistant(check_help_status.output));
-            status.commands = check_help_status.commands;
-            status.usage = usage_sum(status.usage, check_help_status.usage);
-        }
 
         if let Some(FinishResponseArgs { results }) = &status.commands
             && results.iter().any(is_potentially_invalid_command)

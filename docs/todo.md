@@ -15,11 +15,12 @@
 - [x] indicatif 实时显示模型输出在一行.
 - [x] 减小构建大小.
 - [x] 在 Windows shell 下可能会检测到第一个 Enter, 是由于执行命令产生的, 应该忽略.
+- [x] 解决具有副作用的 `--help` 问题, 比如 mkdir (通过系统沙箱只读执行: macOS Seatbelt / Linux Bubblewrap).
+- [x] fixme: 在使用帮助工具的时候静默执行了具有副作用的命令 (help 工具改为沙箱只读执行任意参数, 不再强制 `--help`).
 
 ## 👨‍💻 Progressing
 
 - [ ] 给每个输出的命令一个简短的 description (finish tool 要改名).
-- [ ] 解决具有副作用的 `--help` 问题, 比如 mkdir.
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.
@@ -53,9 +54,6 @@
 - [ ] 收藏夹功能, 收藏某个命令, 活着收藏某个命令的思路, 让 Agent 根据收藏项及其描述来生成命令.
 - [ ] 测试 deepseek-v3.2 模型能不能胜任.
 - [ ] tui select 对输出的多行命令进行适配显示.
-- [ ] fixme: 在使用帮助工具的时候静默执行了具有副作用的命令, 复现: `howlto --debug init go project in (pwd)`
-  - 这个可能需要解决非 `--help` cli 的问题, 可以给 help 工具添加一个 harness 参数, 默认为 `false`,
-    当为 `true` 的时候需要模型自己提供完整的帮助命令.
 
 ## ❌ Cancelled
 
