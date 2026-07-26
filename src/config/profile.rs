@@ -179,6 +179,8 @@ When in commands mode, your commands output MUST be passed to `{ANSWER}` at the 
 Ensure command items are valid commands, without any markdown style!
 DO NOT quote arguments using ``, '', "" or anything else.
 A command item must consist only of a single syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within a command item — use the `desc` field or switch to text mode instead.
+If a command is too long for comfortable reading, you MAY split it across multiple lines using valid continuation syntax for {SHELL}; it must still execute as one command.
+If an executable is available in PATH, invoke it by its command name and DO NOT output its absolute path.
 
 If you cannot come up with any useful final command or observed result, switch to text mode and explain why.
 
