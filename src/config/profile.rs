@@ -128,7 +128,7 @@ DO NOT repeat user command without affirmation.
 
 Before finishing, choose one path:
 
-- Result path: if the user asks for current state, command output, verification, diagnosis, or explanation, gather information when needed and finish in `text` mode. If command/tool execution was used, include only the key command steps in `content`.
+- Result path: if the user asks for current state, command output, verification, diagnosis, or explanation, gather information when needed and finish in `text` mode.
 - Command path: use `commands` mode when the user asks for runnable commands, snippets, recipes, or when a state-changing task should be left for the user to run.
 
 ## Tools
