@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crate::agent::tool_call_log;
 use crate::agent::tools::{
     Answer, AnswerArgs, AnswerBody, CommandItem, Elevate, Explore, Man, TheFuck, Tldr,
 };
@@ -360,9 +361,9 @@ impl AnswerAgent {
                         tool_call,
                         internal_call_id,
                     } => {
-                        info!(
-                            "Toolcall: {} - {}",
-                            tool_call.function.name, tool_call.function.arguments
+                        tool_call_log::log(
+                            &tool_call.function.name,
+                            &tool_call.function.arguments,
                         );
                         if streaming_tool_call_ids.remove(&internal_call_id) {
                             scroll
@@ -567,10 +568,12 @@ impl AnswerAgent {
             .unwrap_or(AnswerBody::Text {
                 content: String::new(),
             });
-        if matches!(answer, AnswerBody::Commands { .. }) {
-            info!("AnswerAgent: {}", status.output);
-        } else {
-            info!("AnswerAgent answered.\n");
+        debug!("AnswerAgent raw output: {}", status.output);
+        match &answer {
+            AnswerBody::Commands { commands } => {
+                info!(options = commands.len(), "AnswerAgent answered with commands.");
+            }
+            AnswerBody::Text { .. } => info!("AnswerAgent answered with text."),
         }
         Ok(AnswerAgentResponse {
             messages: history,

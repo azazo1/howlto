@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -23,6 +24,37 @@ mod modify;
 mod select;
 
 const MINIMUM_TUI_WIDTH: usize = 45;
+
+fn print_command_candidates(
+    commands: &[crate::agent::tools::CommandItem],
+) -> std::io::Result<()> {
+    let mut stderr = std::io::stderr().lock();
+    write_command_candidates(&mut stderr, commands)?;
+    stderr.flush()
+}
+
+fn write_command_candidates(
+    writer: &mut impl Write,
+    commands: &[crate::agent::tools::CommandItem],
+) -> std::io::Result<()> {
+    writeln!(writer, "Candidate commands:")?;
+    for (index, command) in commands.iter().enumerate() {
+        let number = index + 1;
+        let total = commands.len();
+        let description = command.desc.lines().collect::<Vec<_>>().join(" ");
+        if description.is_empty() {
+            writeln!(writer, "\n[Command {number}/{total}]")?;
+        } else {
+            writeln!(writer, "\n[Command {number}/{total}] {description}")?;
+        }
+        write!(writer, "{}", command.content)?;
+        if !command.content.ends_with('\n') {
+            writeln!(writer)?;
+        }
+        writeln!(writer, "[/Command {number}/{total}]")?;
+    }
+    Ok(())
+}
 
 fn detect_os() -> String {
     sysinfo::System::name().unwrap_or(std::env::consts::OS.to_string())
@@ -155,6 +187,7 @@ async fn run_internal(
                 if commands.is_empty() {
                     break;
                 }
+                print_command_candidates(commands)?;
                 let action = select::App::select(commands.clone()).await?;
                 let mut should_exit = true;
                 if let Some(action) = &action {
@@ -192,6 +225,30 @@ mod test {
         agent::tools::CommandItem,
         tui::command_helper::select::{Action, ActionKind},
     };
+
+    #[test]
+    fn command_output_separates_multiline_commands_from_options() {
+        let commands = vec![
+            CommandItem {
+                content: "first line\nsecond line".into(),
+                desc: "multiline".into(),
+            },
+            CommandItem {
+                content: "single line".into(),
+                desc: "single".into(),
+            },
+        ];
+        let mut output = Vec::new();
+
+        super::write_command_candidates(&mut output, &commands).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        let multiline_content = output.find("first line\nsecond line").unwrap();
+        let first_end = output.find("[/Command 1/2]").unwrap();
+        let second_start = output.find("[Command 2/2]").unwrap();
+
+        assert!(multiline_content < first_end);
+        assert!(first_end < second_start);
+    }
 
     #[tokio::test]
     #[ignore = "需要真实 TTY 交互 (手动选择), 用 `cargo test select_app_print_to_input_buffer -- --ignored --nocapture` 运行"]
