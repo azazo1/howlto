@@ -59,6 +59,13 @@ howlto upgrade all bun packages
 
 你会获得一个选项框, 可以复制, 编辑, 执行模型提供的命令等.
 
+首个独立词可以作为输出偏好. `command`, `cmd`, `c` 偏向命令候选, `text`, `txt`, `t` 偏向纯文字回答:
+
+```shell
+howlto c list files by size
+howlto t explain detached HEAD
+```
+
 如果你只想获取纯净的输出, 且无需交互:
 
 ```shell
