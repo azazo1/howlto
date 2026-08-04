@@ -7,6 +7,7 @@ use crossterm::tty::IsTty;
 use howlto::config::AppConfigLoader;
 use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
+use howlto::config::DEFAULT_OPENAI_BASE_URL;
 use howlto::logging;
 use howlto::shell::Shell;
 use howlto::tui;
@@ -28,6 +29,8 @@ struct AppArgs {
     debug: bool,
     #[clap(long, help = "输出 shell 集成初始化脚本")]
     init: bool,
+    #[clap(long, help = "创建缺失的默认 config.toml 和 profiles.toml, 不覆盖已有文件.")]
+    init_config: bool,
     #[clap(long, help = "[Shell 集成参数]")]
     htcmd_file: Option<PathBuf>,
 }
@@ -40,36 +43,12 @@ async fn main() -> anyhow::Result<()> {
         plain,
         quiet,
         init,
+        init_config,
         htcmd_file,
         debug,
     } = AppArgs::parse();
 
     let shell = Shell::detect_shell();
-
-    let config_dir_str = config_dir
-        .to_str()
-        .ok_or(io::Error::new(
-            io::ErrorKind::InvalidFilename,
-            "Invalid filename",
-        ))
-        .with_context(|| format!("无效的文件名: {config_dir:?}"))?;
-    let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
-
-    let config_loader = AppConfigLoader::new(&config_dir)
-        .await
-        .with_context(|| format!("无法创建配置目录: {}", config_dir.display()))?;
-    let config = config_loader
-        .load_or_create_config()
-        .await
-        .with_context(|| format!("无法加载配置: {}", config_dir.display()))?;
-    let profiles = config_loader
-        .load_or_create_profiles()
-        .await
-        .with_context(|| format!("无法加载 Profiles: {}", config_dir.display()))?;
-
-    let _guard = logging::init(&config_dir, !quiet, debug)
-        .await
-        .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
 
     if init {
         println!(
@@ -82,13 +61,59 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let config_dir_str = config_dir
+        .to_str()
+        .ok_or(io::Error::new(
+            io::ErrorKind::InvalidFilename,
+            "Invalid filename",
+        ))
+        .with_context(|| format!("无效的文件名: {config_dir:?}"))?;
+    let config_dir = PathBuf::from(shellexpand::tilde(config_dir_str).to_string());
+
+    let config_loader = AppConfigLoader::new(&config_dir);
+    if init_config {
+        let created = config_loader
+            .create_default_files()
+            .await
+            .with_context(|| format!("无法创建配置文件: {}", config_dir.display()))?;
+        if created.is_empty() {
+            println!("配置文件已存在, 未覆盖: {}", config_dir.display());
+        } else {
+            for path in created {
+                println!("已创建: {}", path.display());
+            }
+        }
+        return Ok(());
+    }
+
+    let config = config_loader
+        .load_config()
+        .await
+        .with_context(|| format!("无法加载配置: {}", config_dir.display()))?;
+    let profiles = config_loader
+        .load_profiles()
+        .await
+        .with_context(|| format!("无法加载 Profiles: {}", config_dir.display()))?;
+
     // 提前检查
     if config.llm.base_url.is_empty() {
         Err(anyhow::anyhow!(
-            "LLM Base Url 为空, 请检查配置信息是否填写正确: {}",
+            "LLM Base URL 为空. 请设置 HOWLTO_BASE_URL 或 OPENAI_BASE_URL, 或运行 `howlto --init-config` 后编辑: {}",
             config_dir.join(CONFIG_TOML_FILE).display()
         ))?
     }
+    if config.llm.api_key.is_empty()
+        && config.llm.base_url.trim_end_matches('/') == DEFAULT_OPENAI_BASE_URL
+    {
+        Err(anyhow::anyhow!(
+            "LLM API key 为空. 请设置 HOWLTO_API_KEY 或 OPENAI_API_KEY, 或运行 `howlto --init-config` 后编辑: {}",
+            config_dir.join(CONFIG_TOML_FILE).display()
+        ))?
+    }
+
+    let _guard = logging::init(&config_dir, !quiet, debug)
+        .await
+        .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
 
     if prompt.is_empty() {
         todo!("实现交互功能 tui::chatter")

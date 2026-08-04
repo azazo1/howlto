@@ -142,6 +142,19 @@ fn is_known_shell(p: &Path) -> bool {
     }
 }
 
+fn shell_from_path(path: PathBuf) -> Shell {
+    let name = path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("unknown")
+        .to_string();
+    Shell::builder()
+        .maybe_integration(name.parse().ok())
+        .name(name)
+        .path(path)
+        .build()
+}
+
 #[bon::bon]
 impl Shell {
     #[builder]
@@ -170,19 +183,12 @@ impl Shell {
     /// 获取当前 shell 的字符串表示和可执行文件路径.
     pub fn detect_shell() -> Shell {
         let default_shell_path: PathBuf = std::env::var("SHELL").unwrap_or("/bin/sh".into()).into();
-        let default_shell_name = default_shell_path
-            .file_name()
-            .and_then(std::ffi::OsStr::to_str)
-            .unwrap_or("unknown");
 
         macro_rules! fall_back_to_unknown {
             ($e:expr) => {{
                 let Some(x) = $e else {
                     debug!("detect shell failed, fallback to default shell.");
-                    return Shell::builder()
-                        .name(default_shell_name.to_string())
-                        .path(default_shell_path.clone())
-                        .build();
+                    return shell_from_path(default_shell_path.clone());
                 };
                 x
             }};
@@ -211,5 +217,20 @@ impl Shell {
                 .path(path)
                 .build();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{Integration, shell_from_path};
+
+    #[test]
+    fn fallback_shell_keeps_known_integration() {
+        let shell = shell_from_path(PathBuf::from("/usr/local/bin/fish"));
+
+        assert_eq!(shell.integration, Some(Integration::Fish));
+        assert_eq!(shell.name(), "fish");
     }
 }

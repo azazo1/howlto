@@ -20,20 +20,32 @@ cargo install --git https://github.com/azazo1/howlto.git
 
 ## 配置
 
-默认配置目录: `~/.config/howlto/config.toml` (Windows 下 `~` 为 `%USERPROFILE%`).
+默认不会创建 `config.toml` 或 `profiles.toml`. 文件不存在时使用内置配置和默认 profile, 文件已存在时仍会正常加载.
 
-先启动一次 `howlto` 创建配置文件 (可以忽略此次报错),
-修改配置文件中的 `api_key` 和 `base_url` (目前只支持 openai 格式, 需要 `/v1` 后缀),
-然后就能正常使用了.
+OpenAI 的 `base_url` 默认是 `https://api.openai.com/v1`, 模型默认是 `gpt-4o-mini`. 最简单的无配置文件用法只需要提供 API key:
+
+```shell
+env OPENAI_API_KEY=sk-... howlto explain detached HEAD
+```
+
+使用其他 OpenAI-compatible 服务时, 可以通过环境变量覆盖连接信息:
+
+```shell
+env HOWLTO_API_KEY=... HOWLTO_BASE_URL=http://localhost:8000/v1 HOWLTO_MODEL=my-model howlto list files
+```
+
+`HOWLTO_API_KEY`, `HOWLTO_BASE_URL`, `HOWLTO_MODEL`, `HOWLTO_LANGUAGE` 的优先级高于配置文件. 使用内置 OpenAI 默认配置时, API key, base URL 和 model 也分别兼容 `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`. 通用 `OPENAI_*` 变量不会覆盖已有的自定义 provider 配置.
+
+需要持久化配置或自定义默认 prompt 时, 显式创建缺失文件:
+
+```shell
+howlto --init-config
+```
+
+该命令在默认配置目录 `~/.config/howlto/` 中创建缺失的 `config.toml` 和 `profiles.toml`, 已有文件不会被覆盖. 使用 `--config <dir>` 可以指定其他目录.
 
 > [!NOTE]
 > 项目仍然处于非常初步的阶段, 可能会引入许多 breaking changes💥, 因此可能在某次更新后需要手动调整配置内容以继续使用.
-
-`profiles.toml` 中的 answer profile 只包含 `system`, `modify`, `attached` 三个字段. 旧 profile 不会自动迁移或兼容. 从旧版本升级后, 请删除旧文件, 下一次启动会重新生成默认 profile:
-
-```shell
-rm ~/.config/howlto/profiles.toml
-```
 
 ## 使用
 
