@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    agent::tools::CommandItem,
+    agent::submit_commands::CommandItem,
     error::{Error, Result},
     tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
 };
@@ -77,10 +77,10 @@ impl AppWidget {
         if self.should_line_break(
             self.calc_width() as usize - 2,
             2,
-            item.content.as_str(),
-            item.desc.as_str(),
+            item.command.as_str(),
+            item.description.as_str(),
         ) {
-            Self::line_count(item.content.as_str()) + item.desc.lines().count()
+            Self::line_count(item.command.as_str()) + item.description.lines().count()
         } else {
             1
         }
@@ -103,7 +103,8 @@ impl AppWidget {
             .iter()
             .map(|x| {
                 // 命令项: content + desc 对齐; 文本项: 以 content 行宽为准 (markdown 原文).
-                Self::max_line_width(x.desc.as_str()).max(Self::max_line_width(x.content.as_str()))
+                Self::max_line_width(x.description.as_str())
+                    .max(Self::max_line_width(x.command.as_str()))
                     + 5
             })
             .max()
@@ -205,8 +206,8 @@ impl Widget for &mut AppWidget {
                             Span::from("  ")
                         }
                         .fg(Color::LightCyan);
-                        let content = x.content.as_str();
-                        let desc = x.desc.as_str();
+                        let content = x.command.as_str();
+                        let desc = x.description.as_str();
                         if self.should_line_break(width as usize - 2, 2, content, desc) {
                             AppWidget::render_line_break_item(content, desc, selected)
                         } else {
@@ -310,7 +311,7 @@ impl App {
     fn action_result(&self, kind: ActionKind) -> Option<Action> {
         let sel = self.widget.list_state.selected()?;
         let item = self.widget.items.get(sel)?;
-        let command = item.content.clone();
+        let command = item.command.clone();
         Some(Action { command, kind })
     }
 
@@ -377,8 +378,8 @@ mod tests {
         list_state.select_first();
         let mut widget = AppWidget {
             items: vec![CommandItem {
-                content: "for file in *.bak\n    mv $file fixed\nend".into(),
-                desc: "batch rename".into(),
+                command: "for file in *.bak\n    mv $file fixed\nend".into(),
+                description: "batch rename".into(),
             }],
             list_state,
         };
@@ -400,8 +401,8 @@ mod tests {
         list_state.select_first();
         let widget = AppWidget {
             items: vec![CommandItem {
-                content: "cmd\n".repeat(u16::MAX as usize),
-                desc: String::new(),
+                command: "cmd\n".repeat(u16::MAX as usize),
+                description: String::new(),
             }],
             list_state,
         };

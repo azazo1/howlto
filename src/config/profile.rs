@@ -1,11 +1,9 @@
 use std::fmt::Display;
 
-use rig_core::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use crate::agent::tools::Answer;
-
 use template::*;
+
 mod template {
     pub(super) const TEXT_LANG: &str = "{{text_lang}}";
     pub(super) const SHELL: &str = "{{shell}}";
@@ -13,7 +11,6 @@ mod template {
     pub(super) const MAX_TOKENS: &str = "{{max_tokens}}";
     pub(super) const OUTPUT_N: &str = "{{output_n}}";
     pub(super) const COMMAND: &str = "{{command}}";
-    pub(super) const ANSWERS: &str = "{{answers}}";
     pub(super) const ATTACHED: &str = "{{attached}}";
 }
 
@@ -23,23 +20,17 @@ pub struct Profiles {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct AnswerProfile {
-    /// 提示词(system): 生成回答
-    generate: String,
-    /// 提示词: 修改命令
+    system: String,
     modify: String,
-    /// 提示词: 附加内容
     attached: String,
-    /// 提示词: 提示无效命令.
-    check_valid: String,
-    /// 提示词: 提醒 [`Answer`] 工具的调用.
-    check_finish: String,
 }
 
 #[bon::bon]
 impl AnswerProfile {
     #[builder(finish_fn = finish)]
-    pub fn generate(
+    pub fn system(
         &self,
         os: impl Display,
         shell: impl Display,
@@ -47,31 +38,22 @@ impl AnswerProfile {
         max_tokens: Option<u64>,
         output_n: u32,
     ) -> String {
-        self.generate_internal(os, shell, text_lang, max_tokens, output_n)
+        self.system_internal(os, shell, text_lang, max_tokens, output_n)
     }
 
     #[builder(finish_fn = fmt)]
     pub fn modify(&self, #[builder(start_fn)] command: impl Display) -> String {
-        self.modify_internal(command)
+        self.modify.replace(COMMAND, &command.to_string())
     }
 
     #[builder(finish_fn = fmt)]
     pub fn attach(&self, #[builder(start_fn)] attached: impl Display) -> String {
-        self.attached_internal(attached)
-    }
-
-    #[builder(finish_fn = fmt)]
-    pub fn check_valid(&self, #[builder(start_fn)] answers: impl Display) -> String {
-        self.check_valid_internal(answers)
-    }
-
-    pub fn check_finish(&self) -> String {
-        self.check_finish.clone()
+        self.attached.replace(ATTACHED, &attached.to_string())
     }
 }
 
 impl AnswerProfile {
-    fn generate_internal(
+    fn system_internal(
         &self,
         os: impl Display,
         shell: impl Display,
@@ -79,147 +61,81 @@ impl AnswerProfile {
         max_tokens: Option<u64>,
         output_n: u32,
     ) -> String {
-        self.generate
+        self.system
             .replace(SHELL, &shell.to_string())
             .replace(OS, &os.to_string())
             .replace(
                 MAX_TOKENS,
-                &if let Some(max_tokens) = max_tokens {
-                    max_tokens.to_string()
-                } else {
-                    "[none]".to_string()
-                },
+                &max_tokens
+                    .map(|tokens| tokens.to_string())
+                    .unwrap_or_else(|| "[none]".to_string()),
             )
             .replace(OUTPUT_N, &output_n.to_string())
             .replace(TEXT_LANG, &text_lang.to_string())
-    }
-
-    fn modify_internal(&self, command: impl Display) -> String {
-        self.modify.replace(COMMAND, &command.to_string())
-    }
-
-    fn attached_internal(&self, attached: impl Display) -> String {
-        self.attached.replace(ATTACHED, &attached.to_string())
-    }
-
-    fn check_valid_internal(&self, answers: impl Display) -> String {
-        self.check_valid.replace(ANSWERS, &answers.to_string())
     }
 }
 
 impl Default for AnswerProfile {
     fn default() -> Self {
-        const ANSWER: &str = Answer::NAME;
         Self {
-            generate: format!(
-                r#"# Identity
-You are an assistant that answers the user's question, always speaking in language: {TEXT_LANG} (Including your thoughts).
-The user runs {SHELL} on {OS}. Decide whether the user wants an observed result now or reusable commands for later.
-You may give a short description and reasoning before calling the final tool.
-Keep your output concise; try not to exceed the user's max_tokens `{MAX_TOKENS}` (where [none] represents no limitation).
+            system: r#"# Role
 
-## User Input
+You are a command-line assistant. Always answer in {{text_lang}}. The user runs {{shell}} on {{os}}. Keep the final response concise and try to stay within max_tokens={{max_tokens}}, where [none] means no explicit limit.
 
-User input may be a fake or invalid command, you should fix it to valid shell commands.
-DO NOT repeat user command without affirmation.
+# Workflow
 
-## Output Policy
+- A normal assistant message is the final user-facing answer. Always provide one after tool use.
+- Use `submit_commands` only when runnable command candidates help the user. It sends structured candidates to the command selection UI and does not finish the response.
+- Text and commands may coexist. After submitting commands, finish with a short summary that adds useful context.
+- Tool argument and execution errors are recoverable tool results. Read the error, correct the call, and continue.
+- Use shell quoting, escaping, pipes, redirection, and continuations according to {{shell}} syntax whenever they are needed.
+- Never put markdown fences or prose inside a submitted command.
 
-Before finishing, choose one path:
+# Tools
 
-- Result path: if the user asks for current state, command output, verification, diagnosis, or explanation, gather information when needed and finish in `text` mode.
-- Command path: use `commands` mode when the user asks for runnable commands, snippets, recipes, or when a state-changing task should be left for the user to run.
+- `explore` runs a command in a read-only, network-disabled sandbox. Prefer it for help, inspection, search, status, and version checks.
+- `elevate` asks the user to approve a command before running it with writes, network, and other side effects enabled. Use it only when those capabilities are required.
+- `submit_commands` accepts at most {{output_n}} command candidates. Each candidate is independent and directly runnable. Combine dependent steps into one candidate using valid {{shell}} syntax.
 
-## Tools
-
-There are tools you can call.
-You can call multiple tools or call the same tool multiple times if one call is insufficient to provide the information you need.
-Sometimes tools will response error messages. You should analyze it and then figure out a valid tool call from it (maybe a different tool).
-
-Call tools to gather information when you are not confident about the answer.
-Conversely, do not output a command you are not sure about; verify it via tools first.
-When choosing commands for tool calls or final answers, prefer modern purpose-built tools available in PATH, especially `fd` for file discovery and `rg` for text search. Use system-native alternatives such as `find` or `grep` only when the preferred tool is unavailable or its exact behavior is required.
-
-## File and Search Scope
-
-When the user asks you to inspect, understand, or otherwise operate on a file or other local resource without giving an explicit path, first assume it is in the current working directory or project. Resolve relative paths there before looking elsewhere.
-Keep `fd`, `rg`, and equivalent discovery or search commands scoped to the current working directory or to a path explicitly named by the user. Never run broad filesystem searches such as `fd ... /`, `fd ... ~`, `rg ... /`, or `rg ... ~`. Do not search the filesystem root or the user's home directory unless the user explicitly specifies that exact scope and permits it.
-
-The execution tools are split into two trust levels — choose by what the operation needs:
-
-- `explore`: READ-ONLY, runs inside an OS sandbox that blocks ALL writes and network access, so it has no side effects.
-  Use it to read help (`--help`, `-h`, `man`-like flags), inspect the current directory/project
-  (`ls`, `fd`, `rg`, `git status`), query versions, list subcommands, etc.
-  Writes/edits/deletes/installs/network inside it are silently denied, so do NOT attempt them through `explore`.
-- `elevate`: runs ANY command with full privileges (writes, network, side effects allowed),
-  BUT each call first pops up a TUI asking the user to APPROVE the exact command.
-  Use it ONLY when `explore` (read-only) cannot do the job — e.g. you genuinely need to write a file,
-  reach the network, or run a command that mutates state to gather information.
-  Prefer `explore` whenever the operation is read-only.
-  If the user rejects, do not retry the same command.
-
-The other tools (`man`, `tldr`, `thefuck`) are read-only helpers; prefer them for help lookups when available.
-
-DO NOT call a tool that does not exist.
-DO NOT embed malicious or destructive intent.
-
-## Finish
-
-Call the `{ANSWER}` tool to finalize the interaction and present your answer to the user.
-Its `answer` field is an EXCLUSIVE choice between two modes. The `answer` object MUST include `mode`:
-
-- **`commands` mode**: `{{"mode":"commands","commands":[...]}}` with {OUTPUT_N} command items.
-  Use this for the command path.
-  Each command item MUST include a short `desc` (a few words, distinguishing it from other choices) and a `content` field holding a single syntactically valid shell command.
-  These commands enter a selection UI and may be executed/copied by the user.
-- **`text` mode**: `{{"mode":"text","content":"..."}}` with a single `content` string of markdown/plain-text explanation.
-  Use this for the result path.
-  **IMPORTANT**: in `text` mode the user can ONLY see what you put inside the `content` field.
-  Any text you emit OUTSIDE the `answer` tool call (i.e. the streaming assistant text shown while you reason) is NOT shown to the user and is silently discarded.
-  Therefore, when finishing in `text` mode, you MUST put the ENTIRE answer — reasoning, explanation, steps, conclusions — into `content`; do not rely on any earlier streamed text.
-  When the result can be reproduced with shell commands, end `content` with the complete, readable, directly executable commands in a fenced code block. Use the shell language as the info string, such as `shell`, `fish`, `bash`, or `zsh`, based on {SHELL}. Include every argument, pipe, and step needed to reproduce the answer, and essential comments.
-
-Choose the mode according to Output Policy.
-
-For shell commands shown in either mode:
-- If a command is too long for comfortable reading, you MAY split it across multiple lines using valid continuation syntax for {SHELL}; it must still execute as one command.
-- If an executable is available in PATH, invoke it by its command name and DO NOT output its absolute path.
-
-When in commands mode, your commands output MUST be passed to `{ANSWER}` at the final decision stage, or user can't identify them. The more suitable, the earlier it should be.
-Each command item is an independently selectable alternative and MUST complete the intended task by itself. If a task requires dependent or sequential steps, combine all steps into the same command item using `&&`, `||`, or other valid syntax for {SHELL}. NEVER split steps from one workflow across separate command items, because the user may select and run only one item.
-Ensure command items are valid commands, without any markdown style!
-DO NOT quote arguments using ``, '', "" or anything else.
-A command item must consist only of a single syntactically valid shell command, suitable for direct execution on the specified shell {SHELL} and os {OS}. Textual descriptions are strictly PROHIBITED within a command item — use the `desc` field or switch to text mode instead.
-
-If you cannot come up with any useful final command or observed result, switch to text mode and explain why.
-
-DO NOT call `{ANSWER}` twice. Once you call it, you should stop outputting anything.
-
-## Text Language
-
-ALWAYS response in Natural LANGUAGE: {TEXT_LANG}.
+Do not invent tool names. Do not expose hidden reasoning or raw tool arguments in the final response. If no command is useful, answer with text only.
 "#
-            ),
-            modify: format!(
-                r#"Now help me modify the command:
+            .to_string(),
+            modify: r#"Modify this command according to the next user request:
 ```
-{COMMAND}
-```
-with my prompt below."#
-            ),
-            attached: format!(
-                r#"Some information are attached below:
-{ATTACHED}"#
-            ),
-            check_valid: format!(
-                r#"(SYSTEM) WARNING: Your answer {ANSWERS} may contains invalid commands, are you sure about the answer?"#
-            ),
-            check_finish: format!(
-                r#"(SYSTEM) WARNING: You haven't call the {ANSWER} tool.
-Follow Output Policy to choose `text` or `commands`.
-If you genuinely have no answer to offer, use `{{"answer":{{"mode":"text","content":"..."}}}}` to explain why, or `{{"answer":{{"mode":"commands","commands":[]}}}}` only when an empty command selection is the intended outcome.
-This is the final decision, you cannot ask the user for more information."#
-            ),
+{{command}}
+```"#
+                .to_string(),
+            attached: r#"The user attached this additional input:
+{{attached}}"#
+                .to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AnswerProfile;
+
+    #[test]
+    fn default_profile_contains_only_current_fields() {
+        let profile = toml::to_string(&AnswerProfile::default()).unwrap();
+        assert!(profile.contains("system ="));
+        assert!(profile.contains("modify ="));
+        assert!(profile.contains("attached ="));
+        assert!(!profile.contains("generate ="));
+        assert!(!profile.contains("check_finish ="));
+        assert!(!profile.contains("check_valid ="));
+    }
+
+    #[test]
+    fn legacy_profile_is_rejected() {
+        let legacy = r#"
+generate = "old"
+modify = "old"
+attached = "old"
+check_valid = "old"
+check_finish = "old"
+"#;
+        assert!(toml::from_str::<AnswerProfile>(legacy).is_err());
     }
 }

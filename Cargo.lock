@@ -1255,6 +1255,7 @@ dependencies = [
  "ratatui-textarea",
  "reqwest",
  "rig-core",
+ "schemars",
  "serde",
  "serde_json",
  "shellexpand",

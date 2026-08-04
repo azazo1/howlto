@@ -263,7 +263,7 @@ impl App {
     }
 }
 
-/// 使用 tui 向用户确认是否**提权执行**某个命令 (相对沙箱只读的 [`Explore`](crate::agent::tools::Explore) 而言).
+/// 使用 tui 向用户确认是否提权执行某个命令.
 /// 如果用户同意, 返回 Ok(()), 如果用户拒绝, 返回 Err(String), 内含拒绝原因.
 ///
 /// `display_command` 是展示给用户确认的命令字符串, 调用方负责按需拼接 (例如 shell 模式下

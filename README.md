@@ -29,6 +29,12 @@ cargo install --git https://github.com/azazo1/howlto.git
 > [!NOTE]
 > 项目仍然处于非常初步的阶段, 可能会引入许多 breaking changes💥, 因此可能在某次更新后需要手动调整配置内容以继续使用.
 
+`profiles.toml` 中的 answer profile 只包含 `system`, `modify`, `attached` 三个字段. 旧 profile 不会自动迁移或兼容. 从旧版本升级后, 请删除旧文件, 下一次启动会重新生成默认 profile:
+
+```shell
+rm ~/.config/howlto/profiles.toml
+```
+
 ## 使用
 
 直接像普通的英语句子一样提问:
@@ -46,6 +52,8 @@ howlto upgrade all bun packages
 ```shell
 howlto -pq list all files
 ```
+
+存在候选命令时, `--plain` 会跳过选择界面, 并且只向 stdout 输出原始命令. 纯文本回答仍会移除 Markdown 标记后输出.
 
 直接连接管道并执行:
 

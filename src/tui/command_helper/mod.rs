@@ -13,7 +13,7 @@ use tracing::{debug, info};
 
 use crate::{
     agent::answer::{AnswerAgent, AnswerAgentResponse, ModifyOption},
-    agent::tools::AnswerBody,
+    agent::submit_commands::CommandItem,
     config::{AppConfig, profile::Profiles},
     error::{Error, Result},
     shell::Shell,
@@ -25,9 +25,7 @@ mod select;
 
 const MINIMUM_TUI_WIDTH: usize = 45;
 
-fn print_command_candidates(
-    commands: &[crate::agent::tools::CommandItem],
-) -> std::io::Result<()> {
+fn print_command_candidates(commands: &[CommandItem]) -> std::io::Result<()> {
     let mut stderr = std::io::stderr().lock();
     write_command_candidates(&mut stderr, commands)?;
     stderr.flush()
@@ -35,25 +33,41 @@ fn print_command_candidates(
 
 fn write_command_candidates(
     writer: &mut impl Write,
-    commands: &[crate::agent::tools::CommandItem],
+    commands: &[CommandItem],
 ) -> std::io::Result<()> {
     writeln!(writer, "Candidate commands:")?;
     for (index, command) in commands.iter().enumerate() {
         let number = index + 1;
         let total = commands.len();
-        let description = command.desc.lines().collect::<Vec<_>>().join(" ");
+        let description = command.description.lines().collect::<Vec<_>>().join(" ");
         if description.is_empty() {
             writeln!(writer, "\n[Command {number}/{total}]")?;
         } else {
             writeln!(writer, "\n[Command {number}/{total}] {description}")?;
         }
-        write!(writer, "{}", command.content)?;
-        if !command.content.ends_with('\n') {
+        write!(writer, "{}", command.command)?;
+        if !command.command.ends_with('\n') {
             writeln!(writer)?;
         }
         writeln!(writer, "[/Command {number}/{total}]")?;
     }
     Ok(())
+}
+
+fn write_plain_commands(writer: &mut impl Write, commands: &[CommandItem]) -> std::io::Result<()> {
+    for command in commands {
+        write!(writer, "{}", command.command)?;
+        if !command.command.ends_with('\n') {
+            writeln!(writer)?;
+        }
+    }
+    Ok(())
+}
+
+fn print_plain_commands(commands: &[CommandItem]) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    write_plain_commands(&mut stdout, commands)?;
+    stdout.flush()
 }
 
 fn detect_os() -> String {
@@ -159,58 +173,51 @@ async fn run_internal(
         .shell(shell)
         .config(config)
         .build()?;
-    let response = agent
+    let mut response = agent
         .resolve()
         .prompt(prompt.to_string())
         .maybe_attached(attached)
         .call()
         .await?;
-    match &response.answer {
-        AnswerBody::Text { content } => {
-            // 文本模式: 直接打印到终端, 不经过 select.
+    loop {
+        if plain && !response.commands.is_empty() {
+            print_plain_commands(&response.commands)?;
+            break;
+        }
+
+        if !response.final_text.trim().is_empty() {
             if plain {
-                // plain/管道模式: 去掉 markdown 标记的纯文本, 不污染下游.
-                println!("{}", markdown::to_plain_text(content));
+                println!("{}", markdown::to_plain_text(&response.final_text));
             } else {
-                // 交互模式: 打印带颜色高亮的 markdown 文本.
-                markdown::print_ansi(content);
+                markdown::print_ansi(&response.final_text);
+                std::io::stdout().flush()?;
             }
         }
-        AnswerBody::Commands { commands } if commands.is_empty() => {
-            // 空命令列表: 无可选项.
-            tracing::warn!("Empty commands answer.");
+        if response.commands.is_empty() {
+            break;
         }
-        AnswerBody::Commands { .. } => {
-            // 命令模式 (非空): 进选择框.
-            let mut response = response;
-            while let AnswerBody::Commands { commands } = &response.answer {
-                if commands.is_empty() {
-                    break;
-                }
-                print_command_candidates(commands)?;
-                let action = select::App::select(commands.clone()).await?;
-                let mut should_exit = true;
-                if let Some(action) = &action {
-                    debug!("Select action: {action:?}");
-                    match action.kind {
-                        ActionKind::Copy => copy(action.command.clone())?,
-                        ActionKind::Execute => {
-                            execute(action.command.clone(), shell.path()).await?
-                        }
-                        ActionKind::PrintToInputBuffer => {
-                            print_to_input_buffer(&htcmd_file, &action.command).await?
-                        }
-                        ActionKind::Modify => {
-                            should_exit =
-                                !modify(&agent, &mut response, action.command.clone()).await?;
-                            should_exit |= matches!(
-                                &response.answer,
-                                AnswerBody::Commands { commands } if commands.is_empty()
-                            );
-                        }
-                    }
-                }
-                if should_exit {
+
+        print_command_candidates(&response.commands)?;
+        let action = select::App::select(response.commands.clone()).await?;
+        let Some(action) = action else {
+            break;
+        };
+        debug!("Select action: {action:?}");
+        match action.kind {
+            ActionKind::Copy => {
+                copy(action.command)?;
+                break;
+            }
+            ActionKind::Execute => {
+                execute(action.command, shell.path()).await?;
+                break;
+            }
+            ActionKind::PrintToInputBuffer => {
+                print_to_input_buffer(&htcmd_file, &action.command).await?;
+                break;
+            }
+            ActionKind::Modify => {
+                if !modify(&agent, &mut response, action.command).await? {
                     break;
                 }
             }
@@ -222,7 +229,7 @@ async fn run_internal(
 #[cfg(test)]
 mod test {
     use crate::{
-        agent::tools::CommandItem,
+        agent::submit_commands::CommandItem,
         tui::command_helper::select::{Action, ActionKind},
     };
 
@@ -230,12 +237,12 @@ mod test {
     fn command_output_separates_multiline_commands_from_options() {
         let commands = vec![
             CommandItem {
-                content: "first line\nsecond line".into(),
-                desc: "multiline".into(),
+                command: "first line\nsecond line".into(),
+                description: "multiline".into(),
             },
             CommandItem {
-                content: "single line".into(),
-                desc: "single".into(),
+                command: "single line".into(),
+                description: "single".into(),
             },
         ];
         let mut output = Vec::new();
@@ -250,6 +257,26 @@ mod test {
         assert!(first_end < second_start);
     }
 
+    #[test]
+    fn plain_command_output_contains_only_raw_commands() {
+        let commands = vec![
+            CommandItem {
+                command: "printf one".into(),
+                description: "first".into(),
+            },
+            CommandItem {
+                command: "printf two\nprintf three".into(),
+                description: "second".into(),
+            },
+        ];
+        let mut output = Vec::new();
+        super::write_plain_commands(&mut output, &commands).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "printf one\nprintf two\nprintf three\n"
+        );
+    }
+
     #[tokio::test]
     #[ignore = "需要真实 TTY 交互 (手动选择), 用 `cargo test select_app_print_to_input_buffer -- --ignored --nocapture` 运行"]
     async fn select_app_print_to_input_buffer() {
@@ -257,16 +284,16 @@ mod test {
         let action = super::select::App::select(
             [
                 CommandItem {
-                    content: "1".into(),
-                    desc: "This is one.".into(),
+                    command: "1".into(),
+                    description: "This is one.".into(),
                 },
                 CommandItem {
-                    content: "2".into(),
-                    desc: "This is two, which is one plus one.".into(),
+                    command: "2".into(),
+                    description: "This is two, which is one plus one.".into(),
                 },
                 CommandItem {
-                    content: "3".into(),
-                    desc: "This is three, which is one plus two.\nThat is to say one plus one plus one."
+                    command: "3".into(),
+                    description: "This is three, which is one plus two.\nThat is to say one plus one plus one."
                         .into(),
                 },
             ]

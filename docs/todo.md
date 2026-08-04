@@ -4,9 +4,8 @@
 
 - [x] 简单调用, e.g: `howlto create a rust project?`.
 - [x] 交互式选择, 修改, 直接执行或者复制输出的命令.
-- [x] 自动读取命令的 `--help` / `man` / `tldr`.
+- [x] 通过 `explore` 自动读取命令的 `--help` / `man` / `tldr`.
 - [x] 类似 `thefuck` 一样自动修复上一个在 shell 中执行的命令.
-- [x] 添加 `thefuck` 帮助 tool.
 - [x] 根据帮助文档识别子命令的帮助文档, 并根据子命令生成可用的命令.
 - [x] 一次请求生成多个结果.
 - [x] 使用 ratatui 显示 tui 界面(嵌入在原来的 shell 之中, 非新开一个屏幕), 在交互结束之后回到原来的光标位置.
@@ -17,10 +16,10 @@
 - [x] 在 Windows shell 下可能会检测到第一个 Enter, 是由于执行命令产生的, 应该忽略.
 - [x] 解决具有副作用的 `--help` 问题, 比如 mkdir (通过系统沙箱只读执行: macOS Seatbelt / Linux Bubblewrap).
 - [x] fixme: 在使用帮助工具的时候静默执行了具有副作用的命令 (help 工具改为沙箱只读执行任意参数, 不再强制 `--help`).
+- [x] 使用 `submit_commands` 提交带可选 description 的候选命令.
 
 ## 👨‍💻 Progressing
 
-- [ ] 给每个输出的命令一个简短的 description (finish tool 要改名).
 - [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.

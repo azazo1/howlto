@@ -1,192 +1,122 @@
-use std::collections::HashSet;
-use std::fmt::Debug;
-use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use crate::agent::tool_call_log;
-use crate::agent::tools::{
-    Answer, AnswerArgs, AnswerBody, CommandItem, Elevate, Explore, Man, TheFuck, Tldr,
+use crate::{
+    agent::{
+        command::{Elevate, Explore},
+        stream::{self, StreamOutcome},
+        submit_commands::{CommandItem, CommandSubmissions, SubmitCommands},
+    },
+    config::{AppConfig, profile::AnswerProfile},
+    error::{Error, Result},
+    shell::Shell,
 };
-use crate::config::AppConfig;
-use crate::config::profile::AnswerProfile;
-use crate::error::{Error, Result};
-use crate::shell::Shell;
 use reqwest::header::HeaderMap;
-use rig_core::agent::{Agent as RigAgent, MultiTurnStreamItem};
-use rig_core::client::CompletionClient;
-use rig_core::completion::Usage;
-use rig_core::message::{Message, ToolResultContent};
-use rig_core::providers::openai::{self, CompletionModel};
-use rig_core::streaming::{
-    StreamedAssistantContent, StreamedUserContent, StreamingChat, ToolCallDeltaContent,
+use rig_core::{
+    agent::{
+        Agent as RigAgent, HookAction, InvalidToolCallContext, InvalidToolCallHookAction,
+        PromptHook,
+    },
+    client::CompletionClient,
+    message::Message,
+    providers::openai::{self, CompletionModel},
+    streaming::StreamingChat,
+    tool::ToolDyn,
 };
-use rig_core::tool::{Tool, ToolDyn};
-use tokio::sync::RwLock;
-use tokio_stream::StreamExt;
-use tracing::{debug, info, info_span, warn};
-use tracing_indicatif::span_ext::IndicatifSpanExt;
-use tracing_indicatif::style::ProgressStyle;
-use unicode_width::UnicodeWidthChar;
+use tracing::{debug, info, warn};
+use tokio::sync::Mutex;
 
-const MULTI_TURN: usize = 100;
+const UNKNOWN_TOOL_RETRIES: usize = 2;
+const EFFECTIVELY_UNLIMITED_TURNS: usize = usize::MAX - 1;
+const PROVIDER_RETRY_ATTEMPTS: usize = 3;
+const PROVIDER_RETRY_BASE_DELAY_MS: u64 = 500;
 
-/// 盲文 spinner, \u28xx, xx 为 00~ff, 按位顺序从右到左分别表示盲文点: 左上, 左中, 左下, 右上, 右中, 右下, 左底, 右底.
-/// 其中最后两个点如果w位都是 0 那么为六点盲文.
-const SPINNER: [&str; 7] = [
-    "\u{280b}", "\u{2819}", "\u{2838}", "\u{2834}", "\u{2826}", "\u{2807}", "",
-];
-
-#[derive(Debug)]
-struct ScrolliingMessage {
-    /// 滚动的窗口宽度.
-    scroll_width: usize,
-    message: RwLock<String>,
-    display_message: RwLock<String>,
-    /// Display byte index.
-    display_read_cursor: RwLock<usize>,
+#[derive(Debug, Clone)]
+struct RetryContext {
+    prompt: Message,
+    history: Vec<Message>,
 }
 
-impl ScrolliingMessage {
-    fn new(scroll_width: usize) -> Self {
-        Self {
-            scroll_width,
-            message: RwLock::new(String::new()),
-            display_message: RwLock::new(String::new()),
-            display_read_cursor: RwLock::new(0),
-        }
+#[derive(Debug, Clone, Default)]
+struct HarnessHook {
+    retry_context: Arc<Mutex<Option<RetryContext>>>,
+}
+
+impl HarnessHook {
+    async fn clear_retry_context(&self) {
+        *self.retry_context.lock().await = None;
     }
 
-    /// 获取累计的所有内容.
-    async fn message(&self) -> String {
-        self.message.read().await.clone()
-    }
-
-    async fn push(&self, appendant: String) {
-        self.push_with_display(appendant.clone(), appendant).await;
-    }
-
-    async fn push_with_display(&self, appendant: String, display_appendant: String) {
-        let display_appendant = sanitize_scroll_message(&display_appendant);
-        let mut message = self.message.write().await;
-        *message += &appendant;
-        let mut display_message = self.display_message.write().await;
-        *display_message += &display_appendant;
-    }
-
-    async fn has_new_messages(&self) -> bool {
-        let display_message = self.display_message.read().await;
-        display_message.len() > *self.display_read_cursor.read().await
-    }
-
-    fn window_at_first(s: &str, width: usize) -> &str {
-        let mut acc = 0;
-        if let Some((idx, ch)) = s
-            .char_indices()
-            .map_while(|(idx, ch)| {
-                acc += ch.width_cjk().unwrap_or(0);
-                if acc <= width { Some((idx, ch)) } else { None }
-            })
-            .last()
-        {
-            &s[..idx + ch.len_utf8()]
-        } else {
-            ""
-        }
-    }
-
-    fn window_at_last(s: &str, width: usize) -> &str {
-        let mut acc = 0;
-        if let Some(idx) = s
-            .char_indices()
-            .rev()
-            .map_while(|(idx, ch)| {
-                acc += ch.width_cjk().unwrap_or(0);
-                if acc <= width { Some(idx) } else { None }
-            })
-            .last()
-        {
-            &s[idx..]
-        } else {
-            ""
-        }
-    }
-
-    /// - `step`: 滚动 unicode_width 数.
-    async fn scroll(&self, step: usize) -> String {
-        let cursor = *self.display_read_cursor.read().await;
-        let display_message = self.display_message.read().await;
-        let appendant = Self::window_at_first(&display_message[cursor..], step);
-        #[cfg(test)]
-        eprintln!("appendant: {{{appendant}}}");
-        let window =
-            Self::window_at_last(&display_message[..cursor + appendant.len()], self.scroll_width);
-        *self.display_read_cursor.write().await += appendant.len();
-        window.to_string()
+    async fn take_retry_context(&self) -> Option<RetryContext> {
+        self.retry_context.lock().await.take()
     }
 }
 
-fn sanitize_scroll_message(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' {
-            if chars.next_if_eq(&'[').is_some() {
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-        if ch.is_control() {
-            out.push(' ');
-        } else {
-            out.push(ch);
-        }
-    }
-    out
+fn normalize_tool_name(name: &str) -> String {
+    name.chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
-/// Answer Agent: 解答用户问题, 既可输出 shell 命令, 也可输出纯文本/markdown.
+impl PromptHook<CompletionModel> for HarnessHook {
+    async fn on_completion_call(
+        &self,
+        prompt: &Message,
+        history: &[Message],
+    ) -> HookAction {
+        *self.retry_context.lock().await = Some(RetryContext {
+            prompt: prompt.clone(),
+            history: history.to_vec(),
+        });
+        HookAction::cont()
+    }
+
+    async fn on_invalid_tool_call(
+        &self,
+        context: &InvalidToolCallContext,
+    ) -> InvalidToolCallHookAction {
+        let normalized = normalize_tool_name(&context.tool_name);
+        let matches = context
+            .allowed_tools
+            .iter()
+            .filter(|name| normalize_tool_name(name) == normalized)
+            .collect::<Vec<_>>();
+        if let [repaired_name] = matches.as_slice() {
+            warn!(
+                emitted = %context.tool_name,
+                repaired = %repaired_name,
+                "Repairing tool name."
+            );
+            return InvalidToolCallHookAction::repair((*repaired_name).clone());
+        }
+
+        InvalidToolCallHookAction::retry(format!(
+            "Unknown tool `{}`. Use exactly one of these tool names: {}.",
+            context.tool_name,
+            context.allowed_tools.join(", ")
+        ))
+    }
+}
+
 pub struct AnswerAgent {
     profile: AnswerProfile,
-    config: AppConfig,
-    agent: RigAgent<CompletionModel>,
+    agent: RigAgent<CompletionModel, HarnessHook>,
+    finalizer: RigAgent<CompletionModel>,
+    submissions: Arc<CommandSubmissions>,
+    hook: HarnessHook,
 }
 
 #[derive(Debug, Clone)]
 pub struct AnswerAgentResponse {
-    /// agent 做出决策时的上下文.
     pub messages: Vec<Message>,
-    /// agent 做出决策需要输出的回答 (命令或文本).
-    pub answer: AnswerBody,
+    pub final_text: String,
+    pub commands: Vec<CommandItem>,
 }
 
 #[derive(Debug)]
 pub struct ModifyOption {
-    /// 之前输出的上下文.
     history: Vec<Message>,
-    /// 需要修改的命令
     command: String,
-}
-
-struct StreamChatStatus {
-    output: String,
-    usage: Option<Usage>,
-    answers: Option<AnswerArgs>,
-}
-
-fn parse_answer_args(arguments: serde_json::Value) -> Option<AnswerArgs> {
-    match serde_json::from_value(arguments) {
-        Ok(args) => Some(args),
-        Err(e) => {
-            warn!(error = %e, "invalid answer tool arguments");
-            None
-        }
-    }
 }
 
 impl ModifyOption {
@@ -208,26 +138,6 @@ impl AnswerAgent {
     }
 }
 
-fn usage_sum(a: Option<Usage>, b: Option<Usage>) -> Option<Usage> {
-    match (a, b) {
-        (None, None) => None,
-        (None, Some(b)) => Some(b),
-        (Some(a), None) => Some(a),
-        (Some(a), Some(b)) => Some(a + b),
-    }
-}
-
-/// 判断一条命令是否"疑似无效" (首字符非 ASCII 且不在 PATH 中).
-/// 仅对 [`AnswerBody::Commands`] 中的命令项调用; 文本回答不参与校验.
-fn is_potentially_invalid_command(s: &CommandItem) -> bool {
-    let s = s.content.as_str();
-    if let Some(ch) = s.chars().next() {
-        !ch.is_ascii() && which::which(Path::new(s)).is_err()
-    } else {
-        true
-    }
-}
-
 impl AnswerAgent {
     #[tracing::instrument(
         name = "AnswerAgent",
@@ -241,17 +151,41 @@ impl AnswerAgent {
         profile: AnswerProfile,
         config: AppConfig,
     ) -> Result<Self> {
-        // 添加 Content-Type: application/json 请求头.
-        let http_client = reqwest::Client::builder()
+        let base_host = reqwest::Url::parse(&config.llm.base_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned));
+        let mut http_client_builder = reqwest::Client::builder()
             .default_headers({
-                let mut hm = HeaderMap::new();
-                hm.insert(
+                let mut headers = HeaderMap::new();
+                headers.insert(
                     reqwest::header::CONTENT_TYPE,
-                    "application/json".parse().unwrap(),
+                    "application/json".parse().expect("valid content type"),
                 );
-                hm
-            })
-            .build()?;
+                headers
+            });
+        if let Some(host) = base_host {
+            // Chat Completions 请求没有本地副作用, 只重试瞬时 HTTP 错误.
+            http_client_builder = http_client_builder.retry(
+                reqwest::retry::for_host(host)
+                    .max_retries_per_request(2)
+                    .no_budget()
+                    .classify_fn(|request| {
+                        if request.status().is_some_and(|status| {
+                            status.is_server_error()
+                                || matches!(
+                                    status,
+                                    reqwest::StatusCode::REQUEST_TIMEOUT
+                                        | reqwest::StatusCode::TOO_MANY_REQUESTS
+                                )
+                        }) {
+                            request.retryable()
+                        } else {
+                            request.success()
+                        }
+                    }),
+            );
+        }
+        let http_client = http_client_builder.build()?;
         let model = openai::Client::<reqwest::Client>::builder()
             .base_url(&config.llm.base_url)
             .api_key(&config.llm.api_key)
@@ -259,325 +193,188 @@ impl AnswerAgent {
             .build()?
             .completions_api()
             .completion_model(&config.llm.model);
-        let mut builder = rig_core::agent::AgentBuilder::new(model).preamble(
-            &profile
-                .generate()
-                .os(os)
-                .shell(shell.path().display())
-                .text_lang(&config.agent.language)
-                .maybe_max_tokens(config.llm.max_tokens)
-                .output_n(config.agent.answer.output_n)
-                .finish(),
-        );
+
+        let output_n = config.agent.answer.output_n as usize;
+        let submissions = Arc::new(CommandSubmissions::default());
+        let system_prompt = profile
+            .system()
+            .os(os)
+            .shell(shell.path().display())
+            .text_lang(&config.agent.language)
+            .maybe_max_tokens(config.llm.max_tokens)
+            .output_n(config.agent.answer.output_n)
+            .finish();
+        let hook = HarnessHook::default();
+        let mut builder = rig_core::agent::AgentBuilder::new(model.clone())
+            .preamble(&system_prompt)
+            .hook(hook.clone());
         if let Some(max_tokens) = config.llm.max_tokens {
             builder = builder.max_tokens(max_tokens);
         }
         if let Some(temperature) = config.llm.temperature {
             builder = builder.temperature(temperature);
-        };
+        }
+
+        let shell_path = shell.path().to_path_buf();
         let mut tools: Vec<Box<dyn ToolDyn>> = Vec::new();
-        if config.agent.use_tool_man {
-            tools.push(Box::new(Man));
-        }
         if config.agent.use_tool_explore {
-            tools.push(Box::new(Explore::new(shell.path().to_path_buf())));
-        }
-        if config.agent.use_tool_tldr {
-            tools.push(Box::new(Tldr));
-        }
-        if config.agent.use_tool_thefuck {
-            tools.push(Box::new(TheFuck::new(shell.name().to_string())));
+            tools.push(Box::new(Explore::new(shell_path.clone())));
         }
         if config.agent.use_tool_elevate {
-            tools.push(Box::new(Elevate::new(shell.path().to_path_buf())));
+            tools.push(Box::new(Elevate::new(shell_path.clone())));
         }
-        tools.push(Box::new(Answer));
+        tools.push(Box::new(SubmitCommands::new(
+            shell_path,
+            output_n,
+            submissions.clone(),
+        )));
+        let agent = builder.tools(tools).build();
+
+        let finalizer_prompt = format!(
+            "You recover a missing final response. Based on the complete conversation history, provide one concise, non-empty user-facing answer in {}. Do not call tools and do not discuss this recovery instruction.",
+            config.agent.language
+        );
+        let mut finalizer_builder =
+            rig_core::agent::AgentBuilder::new(model).preamble(&finalizer_prompt);
+        if let Some(max_tokens) = config.llm.max_tokens {
+            finalizer_builder = finalizer_builder.max_tokens(max_tokens);
+        }
+        if let Some(temperature) = config.llm.temperature {
+            finalizer_builder = finalizer_builder.temperature(temperature);
+        }
 
         info!("Created.");
         Ok(Self {
-            config,
             profile,
-            agent: builder.tools(tools).build(),
+            agent,
+            finalizer: finalizer_builder.build(),
+            submissions,
+            hook,
         })
     }
 
-    /// 调用 LLM, 实时显示输出.
-    /// # Returns
-    /// (LLM 输出内容, [`Answer`] 结果)
-    async fn stream_chat_internal(
-        &self,
-        span_title: Option<&str>,
-        prompt: String,
-        history: Vec<Message>,
-    ) -> Result<StreamChatStatus> {
-        let mut stream = self
-            .agent
-            .stream_chat(&prompt, history.clone())
-            .multi_turn(MULTI_TURN)
-            .await;
+    fn retryable_provider_error(error: &Error) -> bool {
+        let message = error.to_string();
+        message.contains("Invalid status code 408")
+            || message.contains("Invalid status code 429")
+            || message.contains("Invalid status code 5")
+    }
 
-        let mut output = None;
-        let mut answers: Option<AnswerArgs> = None;
-        let mut streaming_tool_call_ids = HashSet::new();
-        let scroll = Arc::new(ScrolliingMessage::new(40));
-        let finished = Arc::new(AtomicBool::new(false));
-        let span_title = span_title.unwrap_or_default();
-        let pb_span = info_span!("", status = span_title);
-        pb_span.pb_set_style(
-            &ProgressStyle::with_template(&format!(
-                "{{spinner:.green}} Agent({span_title}): {{msg}}"
-            ))
-            .unwrap()
-            .tick_strings(&SPINNER),
-        );
-        pb_span.pb_set_message("Waiting for output...");
-        let _pb_span_enter = pb_span.enter();
-        let scrolling_handle = {
-            // 持续滚动进度条输出.
-            let pb_span = pb_span.clone();
-            let scroll = Arc::clone(&scroll);
-            let finished = Arc::clone(&finished);
-            tokio::spawn(async move {
-                while !finished.load(Ordering::Relaxed) || scroll.has_new_messages().await {
-                    let msg = scroll.scroll(7).await;
-                    if !msg.is_empty() {
-                        pb_span.pb_set_message(&msg);
-                    }
-                    tokio::time::sleep(Duration::from_millis(30)).await;
-                }
-            })
-        };
+    fn provider_retry_delay(attempt: usize) -> Duration {
+        let multiplier = 1_u64 << attempt.min(5);
+        Duration::from_millis(PROVIDER_RETRY_BASE_DELAY_MS * multiplier)
+    }
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| Error::StreamingError(e.to_string()))?;
-            use MultiTurnStreamItem::*;
-            use StreamedAssistantContent::*;
-            match chunk {
-                StreamAssistantItem(content) => match content {
-                    Text(text) => {
-                        scroll.push(text.text).await;
-                    }
-                    ToolCall {
-                        tool_call,
-                        internal_call_id,
-                    } => {
-                        tool_call_log::log(
-                            &tool_call.function.name,
-                            &tool_call.function.arguments,
-                        );
-                        if streaming_tool_call_ids.remove(&internal_call_id) {
-                            scroll
-                                .push_with_display("\n".to_string(), "\n".to_string())
-                                .await;
-                        } else {
-                            scroll
-                                .push_with_display(
-                                    format!(
-                                        "\nToolcall: {} - {}\n",
-                                        tool_call.function.name, tool_call.function.arguments
-                                    ),
-                                    format!("\nToolcall: {}\n", tool_call.function.name),
-                                )
-                                .await;
-                        }
-                        if tool_call.function.name == Answer::NAME {
-                            // todo 提供一个激进的选项, 当 Answer 触发的时候直接结束循环, 即使 Usage 可能无法及时获取.
-                            answers = parse_answer_args(tool_call.function.arguments);
-                            break;
-                        }
-                    }
-                    ToolCallDelta {
-                        internal_call_id,
-                        content,
-                        ..
-                    } => {
-                        streaming_tool_call_ids.insert(internal_call_id);
-                        match content {
-                            ToolCallDeltaContent::Name(name) => {
-                                scroll
-                                    .push_with_display(
-                                        format!("\nToolcall: {name} - "),
-                                        format!("\nToolcall: {name}"),
-                                    )
-                                    .await;
-                            }
-                            ToolCallDeltaContent::Delta(delta) => {
-                                scroll.push_with_display(delta, String::new()).await;
-                            }
-                        }
-                    }
-                    Reasoning(reasoning) => {
-                        scroll
-                            .push(
-                                reasoning
-                                    .content
-                                    .into_iter()
-                                    .map(|c| match c {
-                                        rig_core::message::ReasoningContent::Text {
-                                            text, ..
-                                        } => text,
-                                        rig_core::message::ReasoningContent::Encrypted(s) => s,
-                                        rig_core::message::ReasoningContent::Redacted { data } => {
-                                            data
-                                        }
-                                        rig_core::message::ReasoningContent::Summary(s) => s,
-                                        _ => String::new(),
-                                    })
-                                    .collect(),
-                            )
-                            .await;
-                    }
-                    ReasoningDelta { reasoning, .. } => {
-                        scroll.push(reasoning).await;
-                    }
-                    _ => (),
-                },
-                StreamUserItem(content) => {
-                    let StreamedUserContent::ToolResult { tool_result, .. } = content;
-                    for content in tool_result.content {
-                        if let ToolResultContent::Text(text) = content {
-                            debug!(
-                                "Tool result: {}",
-                                format!("{:?}", text)
-                                    .chars()
-                                    .take(300)
-                                    .chain("...".chars())
-                                    .collect::<String>()
-                            );
-                        }
-                    }
-                }
-                FinalResponse(final_response) => {
-                    // final_response 包含了完整的输出.
-                    debug!("Usage: {:?}", final_response.usage());
-                    output = Some(final_response);
-                }
-                CompletionCall(completion_call) => {
-                    debug!(
-                        call_index = completion_call.call_index,
-                        usage = ?completion_call.usage,
-                        "Completion call finished."
+    async fn primary_chat(&self, prompt: String, history: Vec<Message>) -> Result<StreamOutcome> {
+        let mut next_prompt = Message::user(prompt);
+        let mut next_history = history;
+        for attempt in 0..=PROVIDER_RETRY_ATTEMPTS {
+            self.hook.clear_retry_context().await;
+            let stream = self
+                .agent
+                .stream_chat(next_prompt.clone(), next_history.clone())
+                .multi_turn(EFFECTIVELY_UNLIMITED_TURNS)
+                .max_invalid_tool_call_retries(UNKNOWN_TOOL_RETRIES)
+                .await;
+            match stream::collect(stream, "Resolving").await {
+                Ok(outcome) => return Ok(outcome),
+                Err(error)
+                    if attempt < PROVIDER_RETRY_ATTEMPTS
+                        && Self::retryable_provider_error(&error) =>
+                {
+                    let Some(context) = self.hook.take_retry_context().await else {
+                        return Err(error);
+                    };
+                    let delay = Self::provider_retry_delay(attempt);
+                    warn!(
+                        attempt = attempt + 1,
+                        delay_ms = delay.as_millis() as u64,
+                        "Retrying failed completion request."
                     );
+                    tokio::time::sleep(delay).await;
+                    next_prompt = context.prompt;
+                    next_history = context.history;
                 }
-                _ => warn!("Unhandled stream chunk."),
+                Err(error) => return Err(error),
             }
         }
-        finished.store(true, Ordering::Relaxed);
-        if !self.config.agent.answer.wait_for_output_scrolling {
-            scrolling_handle.abort();
-        }
-        scrolling_handle.await.ok();
-        drop(_pb_span_enter);
-        // 获取了 finish 之后可能会没有及时获取 final response, 导致 output 为空.
-        let (output, usage) = if let Some(output) = output {
-            (output.response().to_string(), Some(output.usage()))
-        } else {
-            (scroll.message().await, None)
-        };
-        Ok(StreamChatStatus {
-            output,
-            usage,
-            answers,
-        })
+        unreachable!("provider retry loop must return a result")
     }
 
-    /// answer agent 解决一个 `prompt`, 或修改命令.
+    async fn finalize_empty_response(&self, history: Vec<Message>) -> Result<StreamOutcome> {
+        for attempt in 0..=PROVIDER_RETRY_ATTEMPTS {
+            let stream = self
+                .finalizer
+                .stream_chat(
+                    "Provide the final user-facing answer now. Do not leave it empty.",
+                    history.clone(),
+                )
+                .await;
+            match stream::collect(stream, "Finalizing").await {
+                Ok(outcome) => return Ok(outcome),
+                Err(error)
+                    if attempt < PROVIDER_RETRY_ATTEMPTS
+                        && Self::retryable_provider_error(&error) =>
+                {
+                    let delay = Self::provider_retry_delay(attempt);
+                    warn!(
+                        attempt = attempt + 1,
+                        delay_ms = delay.as_millis() as u64,
+                        "Retrying failed finalizer request."
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("finalizer retry loop must return a result")
+    }
+
     async fn resolve_internal(
         &self,
         prompt: String,
         modify_option: Option<ModifyOption>,
         attached: Option<String>,
     ) -> Result<AnswerAgentResponse> {
-        // stream_prompt 会自动处理工具的调用.
-        let attached_iter = attached
+        self.submissions.clear().await;
+        let attached_messages = attached
             .into_iter()
-            .map(|a| Message::user(self.profile.attach(a).fmt()));
-        let mut history: Vec<Message> = if let Some(modify_option) = &modify_option {
+            .map(|content| Message::user(self.profile.attach(content).fmt()));
+        let history = if let Some(modify_option) = modify_option {
             modify_option
                 .history
-                .clone()
                 .into_iter()
                 .chain([Message::user(
-                    self.profile.modify(&modify_option.command).fmt(),
+                    self.profile.modify(modify_option.command).fmt(),
                 )])
-                .chain(attached_iter)
+                .chain(attached_messages)
                 .collect()
         } else {
-            attached_iter.collect()
+            attached_messages.collect()
         };
 
-        let mut status = self
-            .stream_chat()
-            .span_title("Resolving")
-            .prompt(prompt.clone())
-            .history(history.clone())
-            .call()
-            .await?;
-
-        history.push(Message::user(&prompt));
-        history.push(Message::assistant(&status.output));
-
-        // 仅当当前回答是命令模式时, 才做"疑似无效命令"校验, 让模型复核.
-        if let Some(AnswerArgs {
-            answer: AnswerBody::Commands { commands },
-        }) = &status.answers
-            && commands.iter().any(is_potentially_invalid_command)
-            && let Ok(check_valid_status) = self
-                .stream_chat()
-                .span_title("Checking Valid")
-                .history(history.clone())
-                .prompt(
-                    self.profile
-                        .check_valid(
-                            commands
-                                .iter()
-                                .map(|x| x.content.as_str())
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                        )
-                        .fmt(),
-                )
-                .call()
-                .await
-        {
-            status.answers = check_valid_status.answers;
-            status.usage = usage_sum(status.usage, check_valid_status.usage);
-        }
-
-        if status.answers.is_none()
-            && let Ok(check_finish_status) = self
-                .stream_chat()
-                .span_title("Finishing")
-                .prompt(self.profile.check_finish())
-                .history(history.clone())
-                .call()
-                .await
-        {
-            status.answers = check_finish_status.answers;
-            status.usage = usage_sum(status.usage, check_finish_status.usage);
-        }
-
-        // todo 这里使用 ratatui 输出对话框.
-        if status.answers.is_none() {
-            warn!("No answer provided.");
-        }
-        // 兜底: 模型未给出有效回答时, 给一个空的文本回答.
-        let answer = status
-            .answers
-            .map(|x| x.answer)
-            .unwrap_or(AnswerBody::Text {
-                content: String::new(),
-            });
-        debug!("AnswerAgent raw output: {}", status.output);
-        match &answer {
-            AnswerBody::Commands { commands } => {
-                info!(options = commands.len(), "AnswerAgent answered with commands.");
+        let mut outcome = self.primary_chat(prompt, history).await?;
+        let commands = self.submissions.snapshot().await;
+        if outcome.final_text.trim().is_empty() && commands.is_empty() {
+            warn!("Agent returned neither final text nor command candidates.");
+            outcome = self.finalize_empty_response(outcome.messages).await?;
+            if outcome.final_text.trim().is_empty() {
+                return Err(Error::AgentResponse(
+                    "Agent returned an empty response after finalization.".to_string(),
+                ));
             }
-            AnswerBody::Text { .. } => info!("AnswerAgent answered with text."),
         }
+
+        debug!(usage = ?outcome.usage, "AnswerAgent completed.");
+        info!(
+            commands = commands.len(),
+            has_text = !outcome.final_text.trim().is_empty(),
+            "AnswerAgent produced a response."
+        );
         Ok(AnswerAgentResponse {
-            messages: history,
-            answer,
+            messages: outcome.messages,
+            final_text: outcome.final_text,
+            commands,
         })
     }
 }
@@ -593,95 +390,16 @@ impl AnswerAgent {
     ) -> Result<AnswerAgentResponse> {
         self.resolve_internal(prompt, modify_option, attached).await
     }
-
-    #[builder]
-    async fn stream_chat(
-        &self,
-        span_title: Option<&str>,
-        prompt: String,
-        history: Vec<Message>,
-    ) -> Result<StreamChatStatus> {
-        self.stream_chat_internal(span_title, prompt, history).await
-    }
 }
 
 #[cfg(test)]
-mod test {
-    use unicode_width::UnicodeWidthStr;
-
-    use crate::agent::answer::{ScrolliingMessage, parse_answer_args};
-
-    #[tokio::test]
-    async fn scroll_message() {
-        const SCROLL_WIDTH: usize = 10;
-        let sm = ScrolliingMessage::new(SCROLL_WIDTH);
-        sm.push("你好世界".into()).await;
-        assert_eq!(sm.scroll(0).await, "");
-        assert_eq!(sm.scroll(1).await, ""); // 没到字符边界, 没有产生任何效果.
-        assert_eq!(sm.scroll(2).await, "你");
-        assert_eq!(sm.scroll(6).await, "你好世界"); // 滚动到末尾.
-        sm.push("abc".into()).await;
-        assert_eq!("你好世界ab".width_cjk(), SCROLL_WIDTH);
-        let s = sm.scroll(2).await;
-        assert_eq!(s.width_cjk(), SCROLL_WIDTH);
-        assert_eq!(s, "你好世界ab");
-        sm.push("我能正常滚动".into()).await;
-        assert_eq!(sm.scroll(0).await, "你好世界ab");
-        assert_eq!(sm.scroll(usize::MAX).await, "能正常滚动");
-    }
+mod tests {
+    use super::normalize_tool_name;
 
     #[test]
-    fn answer_args_without_mode_is_rejected() {
-        let value = serde_json::json!({
-            "answer": {
-                "commands": [
-                    {
-                        "content": "ls",
-                        "desc": "list files"
-                    }
-                ]
-            }
-        });
-
-        assert!(parse_answer_args(value).is_none());
-    }
-
-    #[tokio::test]
-    async fn tool_call_message_stays_on_separate_line() {
-        let sm = ScrolliingMessage::new(usize::MAX);
-        sm.push("before".into()).await;
-        sm.push("\nToolcall: explore - ".into()).await;
-        sm.push("{}".into()).await;
-        sm.push("\n".into()).await;
-        sm.push("after".into()).await;
-
-        assert_eq!(sm.message().await, "before\nToolcall: explore - {}\nafter");
-    }
-
-    #[tokio::test]
-    async fn scroll_message_sanitizes_display_text() {
-        let sm = ScrolliingMessage::new(usize::MAX);
-        sm.push("before\n\t\x1b[31mred\x1b[0m\rafter".into()).await;
-
-        assert_eq!(sm.scroll(usize::MAX).await, "before  red after");
-    }
-
-    #[tokio::test]
-    async fn scroll_message_keeps_raw_message() {
-        let sm = ScrolliingMessage::new(usize::MAX);
-        let raw = "before\n\t\x1b[31mred\x1b[0m\rafter";
-        sm.push(raw.into()).await;
-
-        assert_eq!(sm.message().await, raw);
-    }
-
-    #[tokio::test]
-    async fn scroll_message_can_hide_display_appendant() {
-        let sm = ScrolliingMessage::new(usize::MAX);
-        sm.push_with_display("raw json args".into(), String::new())
-            .await;
-
-        assert_eq!(sm.message().await, "raw json args");
-        assert_eq!(sm.scroll(usize::MAX).await, "");
+    fn tool_name_normalization_ignores_case_and_separators() {
+        assert_eq!(normalize_tool_name("Submit-Commands"), "submitcommands");
+        assert_eq!(normalize_tool_name("submit_commands"), "submitcommands");
+        assert_eq!(normalize_tool_name("EXPLORE"), "explore");
     }
 }

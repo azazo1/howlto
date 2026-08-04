@@ -43,19 +43,9 @@ pub struct LlmConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentConfig {
-    /// 是否使用 man page 帮助工具辅助 agent 生成内容, 在 windows 下调用可能会失败.
-    #[serde(default = "default_use_tool_man")]
-    pub use_tool_man: bool,
-    /// 是否使用 --help 帮助工具辅助 agent 生成内容,
-    /// 是否能够执行成功取决与程序是否接受 `--help`参数.
+    /// 是否启用只读命令工具.
     #[serde(default = "default_use_tool_explore")]
     pub use_tool_explore: bool,
-    /// 是否使用 tldr 获取帮助信息工具.
-    #[serde(default = "default_use_tool_tldr")]
-    pub use_tool_tldr: bool,
-    /// 是否使用 thefuck 修复命令工具.
-    #[serde(default = "default_use_tool_thefuck")]
-    pub use_tool_thefuck: bool,
     /// 是否启用 elevate 工具,
     /// 用于执行 explore (沙箱只读) 无法完成的命令 (需要写/联网/改变状态),
     /// 每次执行都会向用户询问确认.
@@ -76,9 +66,6 @@ pub struct AnswerConfig {
     /// Answer agent 输出的命令/回答个数.
     #[serde(default = "default_output_n")]
     pub output_n: u32,
-    /// Answer agent 是否等待输出显示完毕,
-    #[serde(default = "default_wait_for_output_scrolling")]
-    pub wait_for_output_scrolling: bool,
 }
 
 impl Default for AppConfig {
@@ -105,24 +92,12 @@ impl Default for AnswerConfig {
     }
 }
 
-fn default_use_tool_thefuck() -> bool {
-    true
-}
-
-fn default_wait_for_output_scrolling() -> bool {
-    false
-}
-
 fn default_output_n() -> u32 {
     3
 }
 
 fn default_language() -> String {
     "en".into()
-}
-
-fn default_use_tool_man() -> bool {
-    true
 }
 
 fn default_use_tool_explore() -> bool {
@@ -134,10 +109,6 @@ fn default_model() -> String {
 }
 
 fn default_cache() -> bool {
-    true
-}
-
-fn default_use_tool_tldr() -> bool {
     true
 }
 

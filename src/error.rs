@@ -17,6 +17,8 @@ pub enum Error {
     #[error("Streaming, {0}")]
     StreamingError(String),
     #[error("{0}")]
+    AgentResponse(String),
+    #[error("{0}")]
     InvalidInput(String),
     #[error("{0}")]
     ClipboardError(String),
