@@ -14,7 +14,7 @@ use howlto::tui;
 use tokio::io::AsyncReadExt;
 
 #[derive(clap::Parser)]
-#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version, author)]
+#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version = env!("HOWLTO_VERSION"), author)]
 struct AppArgs {
     /// 命令生成提示词, 当其为空的时候, 进入交互模式.
     #[clap(num_args=0..)]

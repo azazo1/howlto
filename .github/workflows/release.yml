@@ -84,7 +84,7 @@ jobs:
               jq -er '.packages[] | select(.name == "howlto") | .version'
           )"
           expected_tag="v$package_version"
-          manual_notes="docs/release-notes/$package_version.md"
+          manual_notes="docs/changelog/$package_version.md"
 
           if [[ "$TAG_NAME" != "$expected_tag" ]]; then
             echo "tag $TAG_NAME does not match package version $package_version" >&2
@@ -153,6 +153,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.version.outputs.source_ref }}
+          fetch-depth: 0
 
       - name: Install Rust target
         run: rustup target add "${{ matrix.target }}"
@@ -182,7 +183,7 @@ jobs:
         run: cargo build --locked --release --bins --target "${{ matrix.target }}"
 
       - name: Sign macOS bins
-        if: needs.version.outputs.is_release == 'true' && runner.os == 'macOS'
+        if: ${{ (github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true') && runner.os == 'macOS' }}
         env:
           TARGET: ${{ matrix.target }}
         shell: bash
@@ -190,8 +191,8 @@ jobs:
           set -euo pipefail
           codesign --force --sign - "target/$TARGET/release/howlto"
 
-      - name: Validate release binary
-        if: needs.version.outputs.is_release == 'true'
+      - name: Validate binary
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         env:
           BINARY_FORMAT: ${{ matrix.binary_format }}
           TARGET: ${{ matrix.target }}
@@ -203,15 +204,25 @@ jobs:
           test -x "$binary"
           file "$binary" | grep -q "$BINARY_FORMAT"
 
+          if [[ -n "$VERSION" ]]; then
+            package_version="$VERSION"
+          else
+            package_version="$(
+              cargo metadata --locked --no-deps --format-version 1 |
+                jq -er '.packages[] | select(.name == "howlto") | .version'
+            )"
+          fi
+
+          expected_version="$(bash scripts/version-info.sh "$package_version")"
           actual_version="$("$binary" --version)"
-          if [[ "$actual_version" != "howlto $VERSION" ]]; then
+          if [[ "$actual_version" != "howlto $expected_version" ]]; then
             echo "unexpected version output: $actual_version" >&2
             exit 1
           fi
 
-      - name: Package release binary
+      - name: Package binary
         id: package
-        if: needs.version.outputs.is_release == 'true'
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         env:
           PACKAGE_ARCH: ${{ matrix.package_arch }}
           PACKAGE_OS: ${{ matrix.package_os }}
@@ -220,19 +231,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          package="howlto-$VERSION-$PACKAGE_OS-$PACKAGE_ARCH"
+          if [[ -n "$VERSION" ]]; then
+            package_version="$VERSION"
+          else
+            package_version="$(
+              cargo metadata --locked --no-deps --format-version 1 |
+                jq -er '.packages[] | select(.name == "howlto") | .version'
+            )"
+          fi
+
+          package="howlto-$package_version-$PACKAGE_OS-$PACKAGE_ARCH"
           release_dir="target/$TARGET/release"
 
           mkdir -p "$package"
           cp "$release_dir/howlto" "$package/"
           tar -czf "$package.tar.gz" "$package"
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
           echo "asset=$package.tar.gz" >> "$GITHUB_OUTPUT"
 
-      - name: Upload release package
-        if: needs.version.outputs.is_release == 'true'
+      - name: Upload package artifact
+        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: howlto-${{ needs.version.outputs.version }}-${{ matrix.package_os }}-${{ matrix.package_arch }}
+          name: howlto-${{ steps.package.outputs.package_version }}-${{ matrix.package_os }}-${{ matrix.package_arch }}
           path: ${{ steps.package.outputs.asset }}
           if-no-files-found: error
           retention-days: 3
@@ -270,7 +291,7 @@ jobs:
         run: |
           set -euo pipefail
           tag_ref="refs/tags/$TAG_NAME"
-          manual_notes="docs/release-notes/$VERSION.md"
+          manual_notes="docs/changelog/$VERSION.md"
 
           if [[ ! -s "$manual_notes" ]]; then
             echo "missing release notes: $manual_notes" >&2
@@ -325,8 +346,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manual_notes="docs/release-notes/$VERSION.md"
-          base_tag_file="docs/release-notes/$VERSION-base.txt"
+          manual_notes="docs/changelog/$VERSION.md"
+          base_tag_file="docs/changelog/$VERSION-base.txt"
           api_args=(
             --method POST
             "repos/$GITHUB_REPOSITORY/releases/generate-notes"
@@ -345,7 +366,7 @@ jobs:
           gh api "${api_args[@]}" --jq '.body' > generated-notes.md
           cp "$manual_notes" release-notes.md
           if [[ -s generated-notes.md ]]; then
-            printf '\n\n' >> release-notes.md
+            printf '\n---\n\n' >> release-notes.md
             cat generated-notes.md >> release-notes.md
           fi
 
