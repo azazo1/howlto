@@ -1,5 +1,21 @@
 # 使用场景
 
+## 交互与会话恢复
+
+直接运行 `howlto` 进入交互模式. 当前工作目录已有会话时, 会先显示会话菜单, 可选择继续或从头开始.
+
+```shell
+howlto
+```
+
+普通单次执行也会保存会话, 之后可以继续上次输出:
+
+```shell
+howlto list files by size
+howlto
+# 选择 "New session" 或继续刚刚的会话
+```
+
 ## 直接传参
 
 ```shell

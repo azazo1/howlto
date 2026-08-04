@@ -33,7 +33,7 @@ tracing-appender = "0.2.5"
 tracing-indicatif = "^0.3"
 tracing-subscriber = {version = "0.3.23", features = ["env-filter"]}
 unicode-width = "^0.2.2"
-uuid = {version = "1.23", features = ["v4"]}
+uuid = {version = "1.23", features = ["v4", "v5", "serde"]}
 which = "8.0.3"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations

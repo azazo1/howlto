@@ -212,6 +212,34 @@ async fn plain_text_is_a_normal_final_response() {
 }
 
 #[tokio::test]
+async fn explicit_history_is_sent_to_the_next_completion() {
+    let server = MockServer::start(vec![text_response("first answer"), text_response("second answer")]).await;
+    let agent = make_agent(&server.base_url);
+    let first = agent
+        .resolve()
+        .prompt("first question".to_string())
+        .call()
+        .await
+        .unwrap();
+    let second = agent
+        .resolve()
+        .prompt("second question".to_string())
+        .history(first.messages.clone())
+        .call()
+        .await
+        .unwrap();
+
+    assert_eq!(second.final_text, "second answer");
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 2);
+    let messages = requests[1]["messages"].as_array().unwrap();
+    assert!(messages.iter().any(|message| {
+        message["role"] == "assistant" && message.to_string().contains("first answer")
+    }));
+    server.finish().await;
+}
+
+#[tokio::test]
 async fn submitted_commands_and_summary_are_both_preserved() {
     let server = MockServer::start(vec![
         tool_response(

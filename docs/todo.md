@@ -20,10 +20,10 @@
 
 ## 👨‍💻 Progressing
 
-- [ ] 多段对话功能, 在一次执行能多段对话, 并且在同一个 shell 中连续执行多次能够接上上面的对话内容 (detect_shell 中保存 shell 的 pid 作为键).
+- [x] 多段对话功能, 在一次执行能多段对话, 并且按当前工作目录保存会话, 后续执行可以继续.
 - [ ] ShellCompletionGenAgent 针对特定程序生成 completions 脚本.
 - [ ] 显示 markdown 内容.
-- [ ] howlto 直接执行进入交互模式.
+- [x] howlto 直接执行进入交互模式.
 - [ ] url 网页内容访问, 网页搜索.
 - [ ] 缓存功能.
 - [ ] 修改输入流内容功能 (单独 profile), 比如: `cat a.c | howlto -i convert to python code` 直接输出 python 纯代码.

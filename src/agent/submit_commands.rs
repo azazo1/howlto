@@ -9,7 +9,7 @@ use crate::agent::tool_schema::parameters_for;
 
 const SYNTAX_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandItem {
     #[serde(alias = "content", alias = "cmd")]
     #[schemars(description = "A shell command that can be executed directly.")]

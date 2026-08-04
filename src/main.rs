@@ -9,8 +9,10 @@ use howlto::config::CONFIG_TOML_FILE;
 use howlto::config::DEFAULT_CONFIG_DIR;
 use howlto::config::DEFAULT_OPENAI_BASE_URL;
 use howlto::logging;
+use howlto::session::{Session, SessionStore};
 use howlto::shell::Shell;
 use howlto::tui;
+use tracing::warn;
 use tokio::io::AsyncReadExt;
 
 #[derive(clap::Parser)]
@@ -116,7 +118,14 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("无法初始化日志: {}", config_dir.display()))?;
 
     if prompt.is_empty() {
-        todo!("实现交互功能 tui::chatter")
+        tui::chatter::run()
+            .config_dir(config_dir.clone())
+            .config(config)
+            .profiles(profiles)
+            .shell(&shell)
+            .maybe_htcmd_file(htcmd_file)
+            .call()
+            .await?;
     } else {
         let prompt: String = prompt.join(" ");
         // attach stdin
@@ -129,7 +138,8 @@ async fn main() -> anyhow::Result<()> {
             None
         };
 
-        tui::command_helper::run()
+        let session_config = config.session;
+        let response = tui::command_helper::run()
             .config(config)
             .prompt(&prompt)
             .maybe_htcmd_file(htcmd_file)
@@ -139,6 +149,12 @@ async fn main() -> anyhow::Result<()> {
             .maybe_attached(attached)
             .call()
             .await?;
+        let cwd = std::env::current_dir()?;
+        let mut session = Session::new(&cwd, &prompt, &response);
+        let store = SessionStore::new(&config_dir, session_config);
+        if let Err(error) = store.save(&mut session).await {
+            warn!(error = %error, "Failed to save session.");
+        }
     }
     Ok(())
 }

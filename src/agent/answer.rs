@@ -333,6 +333,7 @@ impl AnswerAgent {
     async fn resolve_internal(
         &self,
         prompt: String,
+        history: Vec<Message>,
         modify_option: Option<ModifyOption>,
         attached: Option<String>,
     ) -> Result<AnswerAgentResponse> {
@@ -340,18 +341,17 @@ impl AnswerAgent {
         let attached_messages = attached
             .into_iter()
             .map(|content| Message::user(self.profile.attach(content).fmt()));
-        let history = if let Some(modify_option) = modify_option {
+        let mut history = history;
+        if let Some(modify_option) = modify_option {
             modify_option
                 .history
                 .into_iter()
                 .chain([Message::user(
                     self.profile.modify(modify_option.command).fmt(),
                 )])
-                .chain(attached_messages)
-                .collect()
-        } else {
-            attached_messages.collect()
-        };
+                .for_each(|message| history.push(message));
+        }
+        history.extend(attached_messages);
 
         let mut outcome = self.primary_chat(prompt, history).await?;
         let commands = self.submissions.snapshot().await;
@@ -385,10 +385,13 @@ impl AnswerAgent {
     pub async fn resolve(
         &self,
         prompt: String,
+        #[builder(default)]
+        history: Vec<Message>,
         modify_option: Option<ModifyOption>,
         attached: Option<String>,
     ) -> Result<AnswerAgentResponse> {
-        self.resolve_internal(prompt, modify_option, attached).await
+        self.resolve_internal(prompt, history, modify_option, attached)
+            .await
     }
 }
 

@@ -6,7 +6,11 @@ use std::{
 use crate::{
     agent::submit_commands::CommandItem,
     error::{Error, Result},
-    tui::{command_helper::MINIMUM_TUI_WIDTH, terminal::InlineTerminal},
+    tui::{
+        candidate::{Action, ActionKind},
+        command_helper::MINIMUM_TUI_WIDTH,
+        terminal::InlineTerminal,
+    },
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -27,20 +31,6 @@ const HINT1: &str = "j/k: up/down | m: modify | c: copy";
 const HINT2: &str = "e: execute | enter: place to input | q/esc: quit";
 const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const BORDER_STYLE: Style = Style::new().fg(Color::Blue);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Action {
-    pub kind: ActionKind,
-    pub command: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionKind {
-    Copy,
-    Execute,
-    Modify,
-    PrintToInputBuffer,
-}
 
 struct AppWidget {
     items: Vec<CommandItem>,

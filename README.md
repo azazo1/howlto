@@ -57,6 +57,25 @@ howlto upgrade all bun packages
 
 > How to upgrade all bun packages?
 
+## 交互模式
+
+直接运行 `howlto` 会进入交互模式. 如果当前工作目录已有会话, 会先显示会话菜单, 可以选择从头开始一个新会话, 或者继续某个历史会话.
+
+```shell
+howlto
+```
+
+普通单次执行, 包括 `--plain` 和管道附加输入, 也会自动把完整对话历史和最后一次输出保存到当前配置目录下的 `sessions/` 目录. 再次进入交互模式时即可继续.
+
+会话按工作目录分组, 默认全局占用上限为 64 MiB. 可以在 `config.toml` 中通过 `[session]` 调整:
+
+```toml
+[session]
+max_bytes = 67108864 # 整个 sessions 目录的最大字节数, 0 表示禁用
+max_per_dir = 0 # 每个工作目录最多保留的会话数, 0 表示不限
+ttl_days = 0 # 会话过期天数, 0 表示不过期
+```
+
 你会获得一个选项框, 可以复制, 编辑, 执行模型提供的命令等.
 
 首个独立词可以作为输出偏好. `command`, `cmd`, `c` 偏向命令候选, `text`, `txt`, `t` 偏向纯文字回答:

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncWriteExt};
 
 pub mod profile;
+pub mod migration;
 
 #[cfg(windows)]
 pub const DEFAULT_CONFIG_DIR: &str = "~\\.config\\howlto\\";
@@ -21,10 +22,14 @@ pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AppConfig {
+    #[serde(default = "default_config_version")]
+    pub version: u32,
     #[serde(default)]
     pub llm: LlmConfig,
     #[serde(default)]
     pub agent: AgentConfig,
+    #[serde(default)]
+    pub session: SessionConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,6 +77,19 @@ pub struct AnswerConfig {
     pub output_n: u32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SessionConfig {
+    /// 整个 sessions 目录的最大字节数, 0 表示禁用.
+    #[serde(default = "default_session_max_bytes")]
+    pub max_bytes: u64,
+    /// 每个工作目录最多保留的会话数, 0 表示不限.
+    #[serde(default)]
+    pub max_per_dir: usize,
+    /// 会话过期天数, 0 表示不过期.
+    #[serde(default)]
+    pub ttl_days: u64,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
@@ -94,6 +112,24 @@ impl Default for AnswerConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: default_session_max_bytes(),
+            max_per_dir: 0,
+            ttl_days: 0,
+        }
+    }
+}
+
+fn default_config_version() -> u32 {
+    migration::CURRENT_CONFIG_VERSION
+}
+
+fn default_session_max_bytes() -> u64 {
+    64 * 1024 * 1024
 }
 
 fn default_output_n() -> u32 {
@@ -189,6 +225,7 @@ impl AppConfigLoader {
         } else {
             AppConfig::default()
         };
+        migration::ensure_supported_version(config.version)?;
         config.apply_env();
         Ok(config)
     }
@@ -306,6 +343,56 @@ mod tests {
         assert_eq!(config.llm.base_url, "https://provider.example/v1");
         assert!(config.llm.api_key.is_empty());
         assert_eq!(config.llm.model, "gpt-4o-mini");
+    }
+
+    #[test]
+    fn default_config_has_session_defaults() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.version, 1);
+        assert_eq!(config.session.max_bytes, 64 * 1024 * 1024);
+        assert_eq!(config.session.max_per_dir, 0);
+        assert_eq!(config.session.ttl_days, 0);
+    }
+
+    #[tokio::test]
+    async fn legacy_config_without_version_loads_as_v1() {
+        let config_dir = temp_config_dir();
+        fs::create_dir_all(&config_dir).await.unwrap();
+        fs::write(
+            config_dir.join(CONFIG_TOML_FILE),
+            r#"
+[llm]
+api_key = "legacy-key"
+"#,
+        )
+        .await
+        .unwrap();
+        let loader = AppConfigLoader::new(&config_dir);
+
+        let config = loader.load_config().await.unwrap();
+        assert_eq!(config.version, 1);
+        assert_eq!(config.session.max_bytes, 64 * 1024 * 1024);
+        fs::remove_dir_all(config_dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn future_config_version_is_rejected() {
+        let config_dir = temp_config_dir();
+        fs::create_dir_all(&config_dir).await.unwrap();
+        fs::write(
+            config_dir.join(CONFIG_TOML_FILE),
+            r#"
+version = 2
+"#,
+        )
+        .await
+        .unwrap();
+        let loader = AppConfigLoader::new(&config_dir);
+
+        let error = loader.load_config().await.unwrap_err();
+        assert!(error.to_string().contains("newer than supported"));
+        fs::remove_dir_all(config_dir).await.unwrap();
     }
 
     #[tokio::test]

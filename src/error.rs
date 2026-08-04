@@ -8,6 +8,8 @@ pub enum Error {
     TomlSerError(#[from] toml::ser::Error),
     #[error(transparent)]
     TomlDeError(#[from] toml::de::Error),
+    #[error(transparent)]
+    JsonError(#[from] serde_json::Error),
     #[error("Profile {profile} not found.")]
     ProfileNotFound { profile: &'static str },
     #[error(transparent)]
@@ -20,6 +22,8 @@ pub enum Error {
     AgentResponse(String),
     #[error("{0}")]
     InvalidInput(String),
+    #[error("Config version {version} is newer than supported version {current}.")]
+    ConfigVersion { version: u32, current: u32 },
     #[error("{0}")]
     ClipboardError(String),
     #[error(transparent)]
