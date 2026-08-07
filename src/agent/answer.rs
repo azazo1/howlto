@@ -104,6 +104,7 @@ pub struct AnswerAgent {
     finalizer: RigAgent<CompletionModel>,
     submissions: Arc<CommandSubmissions>,
     hook: HarnessHook,
+    scroll_char_speed_limit: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -195,6 +196,7 @@ impl AnswerAgent {
             .completion_model(&config.llm.model);
 
         let output_n = config.agent.answer.output_n as usize;
+        let scroll_char_speed_limit = config.agent.scroll_char_speed_limit;
         let submissions = Arc::new(CommandSubmissions::default());
         let system_prompt = profile
             .system()
@@ -250,6 +252,7 @@ impl AnswerAgent {
             finalizer: finalizer_builder.build(),
             submissions,
             hook,
+            scroll_char_speed_limit,
         })
     }
 
@@ -276,7 +279,7 @@ impl AnswerAgent {
                 .multi_turn(EFFECTIVELY_UNLIMITED_TURNS)
                 .max_invalid_tool_call_retries(UNKNOWN_TOOL_RETRIES)
                 .await;
-            match stream::collect(stream, "Resolving").await {
+            match stream::collect(stream, "Resolving", self.scroll_char_speed_limit).await {
                 Ok(outcome) => return Ok(outcome),
                 Err(error)
                     if attempt < PROVIDER_RETRY_ATTEMPTS
@@ -310,7 +313,7 @@ impl AnswerAgent {
                     history.clone(),
                 )
                 .await;
-            match stream::collect(stream, "Finalizing").await {
+            match stream::collect(stream, "Finalizing", self.scroll_char_speed_limit).await {
                 Ok(outcome) => return Ok(outcome),
                 Err(error)
                     if attempt < PROVIDER_RETRY_ATTEMPTS

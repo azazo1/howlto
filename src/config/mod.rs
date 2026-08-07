@@ -60,6 +60,9 @@ pub struct AgentConfig {
     /// 每次执行都会向用户询问确认.
     #[serde(default = "default_use_tool_elevate")]
     pub use_tool_elevate: bool,
+    /// 滚动进度字符速度限制, 单位是字符/秒, 0 表示不限制.
+    #[serde(default)]
+    pub scroll_char_speed_limit: usize,
     #[serde(default = "default_cache")]
     /// 是否使用对话缓存. todo 缓存对话
     pub cache: bool,
@@ -353,6 +356,7 @@ mod tests {
         assert_eq!(config.session.max_bytes, 64 * 1024 * 1024);
         assert_eq!(config.session.max_per_dir, 0);
         assert_eq!(config.session.ttl_days, 0);
+        assert_eq!(config.agent.scroll_char_speed_limit, 0);
     }
 
     #[tokio::test]
