@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 30;
-pub const MAX_TOOL_TIMEOUT_SECS: u64 = 600;
+pub const MAX_TOOL_TIMEOUT_SECS: u64 = 10;
 const MAX_OUTPUT_LINES: usize = 500;
 const OUTPUT_EDGE_LINES: usize = 250;
 const MAX_OUTPUT_BYTES: usize = 50 * 1024;
