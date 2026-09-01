@@ -152,8 +152,8 @@ impl AnswerAgent {
         skip(profile, config, shell),
         fields(
             shell = shell.name(),
-            model = %config.llm.model,
-            endpoint = %endpoint_host(&config.llm.base_url)
+            model = config.llm.model,
+            endpoint = endpoint_host(&config.llm.base_url)
                 .unwrap_or_else(|| config.llm.base_url.clone()),
         )
     )]
