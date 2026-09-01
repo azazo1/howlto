@@ -26,6 +26,12 @@ const HINT_STYLE: Style = Style::new().fg(Color::DarkGray);
 const INPUT_BORDER_STYLE: Style = Style::new().fg(Color::Gray);
 const INPUT_STYLE: Style = Style::new();
 const MINIMUM_TUI_WIDTH: usize = 56;
+/// 左右边框 2 + 水平 padding 2 + `> ` 前缀 2.
+const COMMAND_HORIZONTAL_CHROME: usize = 6;
+/// Decision 模式去掉命令预览后的固定高度: 边框/边距 2 + 警告 1 + 提示 2.
+const DECISION_CHROME_HEIGHT: u16 = 5;
+/// InputReason 模式去掉命令预览后的固定高度: 边框/边距 2 + 警告 1 + 输入框 3 + 提示 2.
+const INPUT_REASON_CHROME_HEIGHT: u16 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -53,24 +59,80 @@ enum AppDecision {
 }
 
 impl AppWidget {
-    fn calc_width(&self) -> u16 {
-        self.command
-            .lines()
-            .map(UnicodeWidthStr::width_cjk)
-            .max()
-            .unwrap_or(0)
+    fn terminal_width() -> u16 {
+        crossterm::terminal::size()
+            .ok()
+            .map(|(width, _)| width)
+            .filter(|&width| width > 0)
+            .unwrap_or(u16::MAX)
+    }
+
+    fn desired_width(&self) -> u16 {
+        max_line_width(&self.command)
+            .saturating_add(COMMAND_HORIZONTAL_CHROME)
             .max(TITLE.width_cjk() + 6)
             .max("enter/y: approve | esc/n: reject | m: reject with reason".width_cjk() + 6)
             .max("Press enter to submit reject reason".width_cjk() + 6)
             .max(MINIMUM_TUI_WIDTH) as u16
     }
 
+    fn calc_width(&self) -> u16 {
+        self.calc_width_capped(Self::terminal_width())
+    }
+
+    fn calc_width_capped(&self, max_width: u16) -> u16 {
+        self.desired_width().min(max_width.max(1))
+    }
+
     fn calc_height(&self) -> u16 {
+        self.calc_height_for_width(self.calc_width())
+    }
+
+    fn calc_height_for_width(&self, width: u16) -> u16 {
+        let inner_width = (width as usize)
+            .saturating_sub(COMMAND_HORIZONTAL_CHROME)
+            .max(1);
+        let command_height = wrapped_line_count(&self.command, inner_width);
         match self.mode {
-            Mode::Decision => 6,
-            Mode::InputReason => 9,
+            Mode::Decision => DECISION_CHROME_HEIGHT.saturating_add(command_height),
+            Mode::InputReason => INPUT_REASON_CHROME_HEIGHT.saturating_add(command_height),
         }
     }
+
+    fn render_command(&self, area: Rect, buf: &mut Buffer) {
+        let [command_prefix_area, command_area] =
+            Layout::horizontal([Constraint::Length(2), Constraint::Fill(1)]).areas(area);
+        Line::from("> ")
+            .style(Style::new().fg(Color::LightGreen))
+            .render(command_prefix_area, buf);
+        Paragraph::new(self.command.as_str())
+            .style(Style::new().fg(Color::White))
+            .wrap(Wrap { trim: false })
+            .render(command_area, buf);
+    }
+}
+
+fn max_line_width(text: &str) -> usize {
+    text.lines()
+        .map(UnicodeWidthStr::width_cjk)
+        .max()
+        .unwrap_or(0)
+}
+
+fn wrapped_line_count(text: &str, width: usize) -> u16 {
+    let width = width.max(1);
+    let count = if text.is_empty() {
+        1
+    } else {
+        text.lines()
+            .map(|line| {
+                let line_width = UnicodeWidthStr::width_cjk(line).max(1);
+                line_width.div_ceil(width)
+            })
+            .sum::<usize>()
+            .max(1)
+    };
+    count.min(u16::MAX as usize) as u16
 }
 
 impl Widget for &AppWidget {
@@ -78,7 +140,8 @@ impl Widget for &AppWidget {
     where
         Self: Sized,
     {
-        let [dialog_area] = Layout::horizontal([Constraint::Length(self.calc_width())]).areas(area);
+        let width = self.calc_width_capped(area.width);
+        let [dialog_area] = Layout::horizontal([Constraint::Length(width)]).areas(area);
         let block = Block::bordered()
             .title_top("")
             .title_top(Line::from(TITLE).style(TITLE_STYLE))
@@ -90,26 +153,16 @@ impl Widget for &AppWidget {
             Mode::Decision => {
                 let [warning_area, command_area, hint_area] = Layout::vertical([
                     Constraint::Length(1),
-                    Constraint::Length(1),
+                    Constraint::Fill(1),
                     Constraint::Length(2),
                 ])
                 .margin(1)
                 .areas(dialog_area);
 
-                let [command_prefix_area, command_area] =
-                    Layout::horizontal([Constraint::Length(2), Constraint::Fill(1)])
-                        .areas(command_area);
-
                 Line::from("This command runs with full privileges. Confirm before execution.")
                     .style(WARNING_STYLE)
                     .render(warning_area, buf);
-                Line::from("> ")
-                    .style(Style::new().fg(Color::LightGreen))
-                    .render(command_prefix_area, buf);
-                Paragraph::new(self.command.as_str())
-                    .style(Style::new().fg(Color::White))
-                    .wrap(Wrap { trim: true })
-                    .render(command_area, buf);
+                self.render_command(command_area, buf);
                 Paragraph::new("enter/y: approve | esc/n: reject | m: reject with reason\nPress m to input reject reason")
                     .style(HINT_STYLE)
                     .right_aligned()
@@ -118,27 +171,17 @@ impl Widget for &AppWidget {
             Mode::InputReason => {
                 let [warning_area, command_area, input_area, hint_area] = Layout::vertical([
                     Constraint::Length(1),
-                    Constraint::Length(1),
+                    Constraint::Fill(1),
                     Constraint::Length(3),
                     Constraint::Length(2),
                 ])
                 .margin(1)
                 .areas(dialog_area);
 
-                let [command_prefix_area, command_area] =
-                    Layout::horizontal([Constraint::Length(2), Constraint::Fill(1)])
-                        .areas(command_area);
-
                 Line::from("This command runs with full privileges. Confirm before execution.")
                     .style(WARNING_STYLE)
                     .render(warning_area, buf);
-                Line::from("> ")
-                    .style(Style::new().fg(Color::LightGreen))
-                    .render(command_prefix_area, buf);
-                Paragraph::new(self.command.as_str())
-                    .style(Style::new().fg(Color::White))
-                    .wrap(Wrap { trim: true })
-                    .render(command_area, buf);
+                self.render_command(command_area, buf);
                 self.reason_input.render(input_area, buf);
                 Paragraph::new("enter: submits rejection\nesc: back to decision mode")
                     .style(HINT_STYLE)
@@ -301,13 +344,14 @@ pub(crate) async fn confirm_elevate(display_command: &str) -> Result<(), String>
 
 #[cfg(test)]
 mod tests {
+    use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
     use tracing::level_filters::LevelFilter;
     use tracing_indicatif::IndicatifLayer;
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    use crate::tui::elevate::confirm_elevate;
+    use super::*;
 
     fn log_init() {
         let indicatif_layer = IndicatifLayer::new();
@@ -337,5 +381,63 @@ mod tests {
                 .unwrap_err(),
             "Rejected by user: noicant"
         );
+    }
+
+    fn widget(command: &str, mode: Mode) -> AppWidget {
+        AppWidget {
+            command: command.to_string(),
+            mode,
+            reason_input: TextArea::default(),
+        }
+    }
+
+    fn buffer_line(buffer: &Buffer, y: u16) -> String {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect()
+    }
+
+    #[test]
+    fn decision_height_grows_with_command_lines() {
+        let width = 80;
+        let single = widget("echo one", Mode::Decision);
+        let multi = widget("echo one\necho two\necho three", Mode::Decision);
+
+        assert_eq!(single.calc_height_for_width(width), DECISION_CHROME_HEIGHT + 1);
+        assert_eq!(multi.calc_height_for_width(width), DECISION_CHROME_HEIGHT + 3);
+        assert_eq!(
+            widget("echo one\necho two\necho three", Mode::InputReason)
+                .calc_height_for_width(width),
+            INPUT_REASON_CHROME_HEIGHT + 3
+        );
+    }
+
+    #[test]
+    fn decision_height_grows_when_a_line_wraps() {
+        let command = "x".repeat(80);
+        let widget = widget(&command, Mode::Decision);
+        let width = 20;
+        let inner_width = (width as usize).saturating_sub(COMMAND_HORIZONTAL_CHROME);
+
+        assert_eq!(
+            widget.calc_height_for_width(width),
+            DECISION_CHROME_HEIGHT + wrapped_line_count(&command, inner_width)
+        );
+        assert!(widget.calc_height_for_width(width) > DECISION_CHROME_HEIGHT + 1);
+    }
+
+    #[test]
+    fn render_keeps_multiline_command_lines() {
+        let widget = widget("echo one\necho two\necho three", Mode::Decision);
+        let width = widget.desired_width();
+        let area = Rect::new(0, 0, width, widget.calc_height_for_width(width));
+        let mut buffer = Buffer::empty(area);
+
+        (&widget).render(area, &mut buffer);
+
+        assert!(buffer_line(&buffer, 2).contains("echo one"));
+        assert!(!buffer_line(&buffer, 2).contains("echo two"));
+        assert!(buffer_line(&buffer, 3).contains("echo two"));
+        assert!(buffer_line(&buffer, 4).contains("echo three"));
     }
 }

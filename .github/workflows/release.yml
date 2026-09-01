@@ -97,6 +97,26 @@ jobs:
 
           echo "version=$package_version" >> "$GITHUB_OUTPUT"
 
+  test:
+    name: Test
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v0-rust
+          shared-key: test-ubuntu
+
+      - name: Run tests
+        run: cargo test --locked --all-targets
+
   build:
     name: Build ${{ matrix.label }}
     needs: version
@@ -263,6 +283,7 @@ jobs:
     if: needs.version.outputs.is_release == 'true'
     needs:
       - version
+      - test
       - build
     runs-on: ubuntu-latest
     permissions:
