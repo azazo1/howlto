@@ -19,7 +19,7 @@ use crate::{
     tui::elevate,
 };
 
-pub const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 10;
 pub const MAX_TOOL_TIMEOUT_SECS: u64 = 10;
 const MAX_OUTPUT_LINES: usize = 500;
 const OUTPUT_EDGE_LINES: usize = 250;
@@ -32,7 +32,7 @@ pub struct CommandArgs {
     #[schemars(description = "The command body passed to the user's shell.")]
     pub command: String,
     #[serde(default, alias = "timeout")]
-    #[schemars(description = "Optional timeout in seconds, from 1 to 600. Defaults to 30.")]
+    #[schemars(description = "Optional timeout in seconds, from 1 to 10. Defaults to 10.")]
     pub timeout_secs: Option<u64>,
 }
 
