@@ -58,6 +58,12 @@ fn normalize_tool_name(name: &str) -> String {
         .collect()
 }
 
+fn endpoint_host(base_url: &str) -> Option<String> {
+    reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+}
+
 impl PromptHook<CompletionModel> for HarnessHook {
     async fn on_completion_call(
         &self,
@@ -144,7 +150,12 @@ impl AnswerAgent {
         name = "AnswerAgent",
         level = "info",
         skip(profile, config, shell),
-        fields(shell = shell.name())
+        fields(
+            shell = shell.name(),
+            model = %config.llm.model,
+            endpoint = %endpoint_host(&config.llm.base_url)
+                .unwrap_or_else(|| config.llm.base_url.clone()),
+        )
     )]
     pub fn new(
         os: String,
@@ -152,9 +163,7 @@ impl AnswerAgent {
         profile: AnswerProfile,
         config: AppConfig,
     ) -> Result<Self> {
-        let base_host = reqwest::Url::parse(&config.llm.base_url)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_owned));
+        let base_host = endpoint_host(&config.llm.base_url);
         let mut http_client_builder = reqwest::Client::builder()
             .default_headers({
                 let mut headers = HeaderMap::new();
