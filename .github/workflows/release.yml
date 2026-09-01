@@ -27,7 +27,7 @@ env:
 jobs:
   version:
     name: Resolve version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       is_release: ${{ steps.release-context.outputs.is_release }}
       tag_name: ${{ steps.release-context.outputs.tag_name }}
@@ -100,7 +100,7 @@ jobs:
   test:
     name: Test
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout target commit
         uses: actions/checkout@v4
@@ -112,7 +112,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v0-rust
-          shared-key: test-ubuntu
+          shared-key: test-ubuntu-24.04
 
       - name: Run tests
         run: cargo test --locked --all-targets
@@ -203,7 +203,7 @@ jobs:
         run: cargo build --locked --release --bins --target "${{ matrix.target }}"
 
       - name: Sign macOS bins
-        if: ${{ (github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true') && runner.os == 'macOS' }}
+        if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
         shell: bash
@@ -212,11 +212,9 @@ jobs:
           codesign --force --sign - "target/$TARGET/release/howlto"
 
       - name: Validate binary
-        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         env:
           BINARY_FORMAT: ${{ matrix.binary_format }}
           TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.version.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -224,16 +222,11 @@ jobs:
           test -x "$binary"
           file "$binary" | grep -q "$BINARY_FORMAT"
 
-          if [[ -n "$VERSION" ]]; then
-            package_version="$VERSION"
-          else
-            package_version="$(
-              cargo metadata --locked --no-deps --format-version 1 |
-                jq -er '.packages[] | select(.name == "howlto") | .version'
-            )"
-          fi
-
-          expected_version="$(bash scripts/version-info.sh "$package_version")"
+          cargo_version="$(
+            cargo metadata --locked --no-deps --format-version 1 |
+              jq -er '.packages[] | select(.name == "howlto") | .version'
+          )"
+          expected_version="$(bash scripts/version-info.sh "$cargo_version")"
           actual_version="$("$binary" --version)"
           if [[ "$actual_version" != "howlto $expected_version" ]]; then
             echo "unexpected version output: $actual_version" >&2
@@ -242,7 +235,6 @@ jobs:
 
       - name: Package binary
         id: package
-        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         env:
           PACKAGE_ARCH: ${{ matrix.package_arch }}
           PACKAGE_OS: ${{ matrix.package_os }}
@@ -251,26 +243,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$VERSION" ]]; then
-            package_version="$VERSION"
-          else
-            package_version="$(
-              cargo metadata --locked --no-deps --format-version 1 |
-                jq -er '.packages[] | select(.name == "howlto") | .version'
-            )"
+          if [[ -n "${VERSION:-}" ]]; then
+            export PACKAGE_VERSION="$VERSION"
           fi
-
-          package="howlto-$package_version-$PACKAGE_OS-$PACKAGE_ARCH"
-          release_dir="target/$TARGET/release"
-
-          mkdir -p "$package"
-          cp "$release_dir/howlto" "$package/"
-          tar -czf "$package.tar.gz" "$package"
-          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
-          echo "asset=$package.tar.gz" >> "$GITHUB_OUTPUT"
+          bash scripts/package.sh
 
       - name: Upload package artifact
-        if: ${{ github.event_name == 'workflow_dispatch' || needs.version.outputs.is_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: howlto-${{ steps.package.outputs.package_version }}-${{ matrix.package_os }}-${{ matrix.package_arch }}
@@ -285,7 +263,7 @@ jobs:
       - version
       - test
       - build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -349,7 +327,12 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          cd release-artifacts
+          mkdir -p staged
+          while IFS= read -r -d '' archive; do
+            mv "$archive" staged/
+          done < <(find release-artifacts -type f -name "howlto-$VERSION-*.tar.gz" -print0)
+
+          cd staged
           archives=(howlto-"$VERSION"-*.tar.gz)
 
           if (( ${#archives[@]} != 6 )); then
@@ -358,6 +341,7 @@ jobs:
           fi
 
           sha256sum "${archives[@]}" > SHA256SUMS
+          mv SHA256SUMS "${archives[@]}" ../release-artifacts/
 
       - name: Generate release notes
         env:

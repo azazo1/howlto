@@ -22,6 +22,16 @@ port:
     zip -r archives/howlto.zip . -x "./target/*" -x "./.git/*" -x "./archives/*"
     simple-http-server -- archives
 
+# 根据当前平台构建并打包发布归档.
+[linux]
+dist:
+    ./scripts/dist.sh
+
+# 根据当前平台构建并打包发布归档.
+[macos]
+dist:
+    ./scripts/dist.sh
+
 clean:
     docker image rm howlto-nushell
     cargo clean

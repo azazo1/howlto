@@ -8,7 +8,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   exit 0
 fi
 
-short_hash=$(git rev-parse --short=6 HEAD)
+short_hash=$(git rev-parse --short=7 HEAD)
 
 if git diff --quiet && git diff --cached --quiet; then
   clean=true
