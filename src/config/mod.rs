@@ -32,6 +32,18 @@ pub struct AppConfig {
     pub session: SessionConfig,
 }
 
+/// 模型思考强度, 对应 OpenAI Chat Completions 的 `reasoning_effort`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LlmConfig {
     /// LLM api key.
@@ -47,6 +59,10 @@ pub struct LlmConfig {
     pub max_tokens: Option<u64>,
     /// LLM 输出 temperature 参数.
     pub temperature: Option<f64>,
+    /// 模型思考强度.
+    /// 取值 none / minimal / low / medium / high / xhigh.
+    /// 不设置则不向提供商发送该参数.
+    pub reasoning_effort: Option<ReasoningEffort>,
     // todo gemini, anthropic api ...
 }
 
@@ -291,7 +307,7 @@ mod tests {
 
     use super::{
         AppConfig, AppConfigLoader, CONFIG_TOML_FILE, DEFAULT_OPENAI_BASE_URL,
-        PROFILES_TOML_FILE,
+        PROFILES_TOML_FILE, ReasoningEffort,
     };
 
     fn temp_config_dir() -> std::path::PathBuf {
@@ -357,6 +373,37 @@ mod tests {
         assert_eq!(config.session.max_per_dir, 0);
         assert_eq!(config.session.ttl_days, 0);
         assert_eq!(config.agent.scroll_char_speed_limit, 0);
+        assert_eq!(config.llm.reasoning_effort, None);
+    }
+
+    #[test]
+    fn reasoning_effort_accepts_supported_levels() {
+        for (raw, expected) in [
+            ("none", ReasoningEffort::None),
+            ("minimal", ReasoningEffort::Minimal),
+            ("low", ReasoningEffort::Low),
+            ("medium", ReasoningEffort::Medium),
+            ("high", ReasoningEffort::High),
+            ("xhigh", ReasoningEffort::Xhigh),
+        ] {
+            let config: AppConfig = toml::from_str(&format!(
+                "[llm]\nreasoning_effort = \"{raw}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(config.llm.reasoning_effort, Some(expected));
+            assert_eq!(
+                serde_json::to_value(expected).unwrap(),
+                serde_json::Value::String(raw.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_reasoning_effort_is_rejected() {
+        assert!(
+            toml::from_str::<AppConfig>("[llm]\nreasoning_effort = \"ultra\"\n")
+                .is_err()
+        );
     }
 
     #[tokio::test]

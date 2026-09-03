@@ -155,6 +155,7 @@ impl AnswerAgent {
             model = config.llm.model,
             endpoint = endpoint_host(&config.llm.base_url)
                 .unwrap_or_else(|| config.llm.base_url.clone()),
+            reasoning_effort = ?config.llm.reasoning_effort,
         )
     )]
     pub fn new(
@@ -225,6 +226,11 @@ impl AnswerAgent {
         if let Some(temperature) = config.llm.temperature {
             builder = builder.temperature(temperature);
         }
+        if let Some(reasoning_effort) = config.llm.reasoning_effort {
+            builder = builder.additional_params(serde_json::json!({
+                "reasoning_effort": reasoning_effort,
+            }));
+        }
 
         let shell_path = shell.path().to_path_buf();
         let mut tools: Vec<Box<dyn ToolDyn>> = Vec::new();
@@ -252,6 +258,11 @@ impl AnswerAgent {
         }
         if let Some(temperature) = config.llm.temperature {
             finalizer_builder = finalizer_builder.temperature(temperature);
+        }
+        if let Some(reasoning_effort) = config.llm.reasoning_effort {
+            finalizer_builder = finalizer_builder.additional_params(serde_json::json!({
+                "reasoning_effort": reasoning_effort,
+            }));
         }
 
         info!("Created.");
