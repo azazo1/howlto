@@ -32,18 +32,6 @@ pub struct AppConfig {
     pub session: SessionConfig,
 }
 
-/// 模型思考强度, 对应 OpenAI Chat Completions 的 `reasoning_effort`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReasoningEffort {
-    None,
-    Minimal,
-    Low,
-    Medium,
-    High,
-    Xhigh,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LlmConfig {
     /// LLM api key.
@@ -59,10 +47,9 @@ pub struct LlmConfig {
     pub max_tokens: Option<u64>,
     /// LLM 输出 temperature 参数.
     pub temperature: Option<f64>,
-    /// 模型思考强度.
-    /// 取值 none / minimal / low / medium / high / xhigh.
-    /// 不设置则不向提供商发送该参数.
-    pub reasoning_effort: Option<ReasoningEffort>,
+    /// 模型思考强度, 原样作为 Chat Completions 的 `reasoning_effort` 发送.
+    /// 不设置或空白则不向提供商发送该参数.
+    pub reasoning_effort: Option<String>,
     // todo gemini, anthropic api ...
 }
 
@@ -124,6 +111,16 @@ impl Default for AgentConfig {
 impl Default for LlmConfig {
     fn default() -> Self {
         toml::from_str("").unwrap()
+    }
+}
+
+impl LlmConfig {
+    /// 返回要发送的思考强度, 空白视为未设置.
+    pub fn reasoning_effort_param(&self) -> Option<&str> {
+        self.reasoning_effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
     }
 }
 
@@ -307,7 +304,7 @@ mod tests {
 
     use super::{
         AppConfig, AppConfigLoader, CONFIG_TOML_FILE, DEFAULT_OPENAI_BASE_URL,
-        PROFILES_TOML_FILE, ReasoningEffort,
+        PROFILES_TOML_FILE,
     };
 
     fn temp_config_dir() -> std::path::PathBuf {
@@ -377,33 +374,15 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_effort_accepts_supported_levels() {
-        for (raw, expected) in [
-            ("none", ReasoningEffort::None),
-            ("minimal", ReasoningEffort::Minimal),
-            ("low", ReasoningEffort::Low),
-            ("medium", ReasoningEffort::Medium),
-            ("high", ReasoningEffort::High),
-            ("xhigh", ReasoningEffort::Xhigh),
-        ] {
-            let config: AppConfig = toml::from_str(&format!(
-                "[llm]\nreasoning_effort = \"{raw}\"\n"
-            ))
-            .unwrap();
-            assert_eq!(config.llm.reasoning_effort, Some(expected));
-            assert_eq!(
-                serde_json::to_value(expected).unwrap(),
-                serde_json::Value::String(raw.to_string())
-            );
-        }
-    }
+    fn reasoning_effort_keeps_arbitrary_string() {
+        let config: AppConfig =
+            toml::from_str("[llm]\nreasoning_effort = \"custom-level\"\n").unwrap();
+        assert_eq!(config.llm.reasoning_effort.as_deref(), Some("custom-level"));
+        assert_eq!(config.llm.reasoning_effort_param(), Some("custom-level"));
 
-    #[test]
-    fn unknown_reasoning_effort_is_rejected() {
-        assert!(
-            toml::from_str::<AppConfig>("[llm]\nreasoning_effort = \"ultra\"\n")
-                .is_err()
-        );
+        let config: AppConfig =
+            toml::from_str("[llm]\nreasoning_effort = \"  \"\n").unwrap();
+        assert_eq!(config.llm.reasoning_effort_param(), None);
     }
 
     #[tokio::test]

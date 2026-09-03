@@ -226,7 +226,7 @@ impl AnswerAgent {
         if let Some(temperature) = config.llm.temperature {
             builder = builder.temperature(temperature);
         }
-        if let Some(reasoning_effort) = config.llm.reasoning_effort {
+        if let Some(reasoning_effort) = config.llm.reasoning_effort_param() {
             builder = builder.additional_params(serde_json::json!({
                 "reasoning_effort": reasoning_effort,
             }));
@@ -259,7 +259,7 @@ impl AnswerAgent {
         if let Some(temperature) = config.llm.temperature {
             finalizer_builder = finalizer_builder.temperature(temperature);
         }
-        if let Some(reasoning_effort) = config.llm.reasoning_effort {
+        if let Some(reasoning_effort) = config.llm.reasoning_effort_param() {
             finalizer_builder = finalizer_builder.additional_params(serde_json::json!({
                 "reasoning_effort": reasoning_effort,
             }));

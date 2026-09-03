@@ -83,11 +83,11 @@ ttl_days = 0 # 会话过期天数, 0 表示不过期
 scroll_char_speed_limit = 0 # 滚动字符速度限制(字符/秒), 0 表示不限制
 ```
 
-可以在 `config.toml` 中通过 `[llm]` 控制思考模型的推理强度. 不写该字段则不会发送, 使用提供商默认值. 发给不支持该参数的模型时, 提供商可能会拒绝请求:
+可以在 `config.toml` 中通过 `[llm]` 控制思考模型的推理强度. 该值会原样作为 `reasoning_effort` 发送, 不写或留空则不发送:
 
 ```toml
 [llm]
-reasoning_effort = "low" # 可选 none / minimal / low / medium / high / xhigh
+reasoning_effort = "low"
 ```
 
 你会获得一个选项框, 可以复制, 编辑, 执行模型提供的命令等.
