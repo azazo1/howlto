@@ -66,7 +66,7 @@ jobs:
 
       - name: Checkout release tag
         if: steps.release-context.outputs.is_release == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.release-context.outputs.source_ref }}
           fetch-depth: 0
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout target commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.source_ref }}
           fetch-depth: 0
@@ -170,7 +170,7 @@ jobs:
 
     steps:
       - name: Checkout target commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.source_ref }}
           fetch-depth: 0
@@ -249,7 +249,7 @@ jobs:
           bash scripts/package.sh
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: howlto-${{ steps.package.outputs.package_version }}-${{ matrix.package_os }}-${{ matrix.package_arch }}
           path: ${{ steps.package.outputs.asset }}
@@ -268,7 +268,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.source_ref }}
           fetch-depth: 0
@@ -315,7 +315,7 @@ jobs:
           fi
 
       - name: Download release packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-artifacts
           merge-multiple: true
