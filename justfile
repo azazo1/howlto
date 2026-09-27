@@ -1,11 +1,8 @@
+[private]
 default:
     @just --list
 
 profile := "dev"
-
-alias m := mocker
-mocker:
-    cargo run --bin mocker --features mocker --profile {{profile}} -- --config ./debug_config/mocker.toml
 
 alias ht := howlto
 howlto *ARGS:
@@ -25,12 +22,12 @@ port:
 # 根据当前平台构建并打包发布归档.
 [linux]
 dist:
-    ./scripts/dist.sh
+    PROJECT_BUILD_VERSION="v$(bash scripts/build-version.sh)" bash scripts/dist.sh
 
 # 根据当前平台构建并打包发布归档.
 [macos]
 dist:
-    ./scripts/dist.sh
+    PROJECT_BUILD_VERSION="v$(bash scripts/build-version.sh)" bash scripts/dist.sh
 
 clean:
     docker image rm howlto-nushell

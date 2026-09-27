@@ -5,3 +5,4 @@ pub mod logging;
 pub mod session;
 pub mod shell;
 pub mod tui;
+pub mod version;

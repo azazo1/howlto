@@ -12,11 +12,12 @@ use howlto::logging;
 use howlto::session::{Session, SessionStore};
 use howlto::shell::Shell;
 use howlto::tui;
+use howlto::version::BUILD_VERSION;
 use tracing::warn;
 use tokio::io::AsyncReadExt;
 
 #[derive(clap::Parser)]
-#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version = env!("HOWLTO_VERSION"), author)]
+#[clap(about = "一个能帮你找到心仪命令的 CLI 工具.", long_about=None, version = BUILD_VERSION, author)]
 struct AppArgs {
     /// 命令生成提示词, 当其为空的时候, 进入交互模式.
     #[clap(num_args=0..)]
