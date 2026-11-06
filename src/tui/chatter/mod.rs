@@ -123,10 +123,11 @@ async fn handle_candidates(
         if response.commands.is_empty() {
             return Ok(());
         }
-        let Some(action) = candidate::select(response.commands.clone()).await? else {
+        let action = candidate::select(response.commands.clone()).await?;
+        candidate::print_candidates(&response.commands)?;
+        let Some(action) = action else {
             return Ok(());
         };
-        candidate::print_candidates(&response.commands)?;
         match action.kind {
             candidate::ActionKind::Copy => {
                 candidate::copy(action.command)?;

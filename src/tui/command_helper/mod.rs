@@ -61,10 +61,10 @@ async fn run_internal(
         }
 
         let action = candidate::select(response.commands.clone()).await?;
+        candidate::print_candidates(&response.commands)?;
         let Some(action) = action else {
             break;
         };
-        candidate::print_candidates(&response.commands)?;
         debug!("Select action: {action:?}");
         match action.kind {
             candidate::ActionKind::Copy => {
